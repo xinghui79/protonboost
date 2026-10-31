@@ -1,0 +1,1189 @@
+#!/usr/bin/env python3
+import hashlib
+import locale
+import os
+import shutil
+import subprocess
+import sys
+import warnings
+from pathlib import Path
+from urllib.parse import quote, unquote, urlparse
+
+import gi
+
+gi.require_version("Gtk", "4.0")
+gi.require_version("Gdk", "4.0")
+from gi.repository import Gdk, Gio, GLib, Gtk, Pango
+
+
+def is_zh() -> bool:
+    value = (
+        os.environ.get("PROTON_LANG")
+        or os.environ.get("LC_ALL")
+        or os.environ.get("LC_MESSAGES")
+        or os.environ.get("LANG")
+        or locale.getlocale()[0]
+        or ""
+    )
+    return value.lower().startswith("zh")
+
+
+ZH = is_zh()
+TEXT = {
+    "title": "运行 Windows 软件" if ZH else "Run Windows Software",
+    "cached_title": "已保存的运行环境" if ZH else "Cached environment",
+    "cached_question": "是否直接使用此环境运行？" if ZH else "Run with this environment?",
+    "program": "程序" if ZH else "Program",
+    "prefix": "前置环境" if ZH else "Prefix",
+    "runner": "运行器" if ZH else "Runner",
+    "program_desc": "将要运行的 Windows 程序" if ZH else "Windows program to run",
+    "prefix_desc": "运行器会在此目录创建虚拟 C 盘，程序会在此环境中运行" if ZH else "The runner creates a virtual C drive here and runs the program in this environment",
+    "runner_desc": "选择用于启动此程序的 Proton 或 Wine 运行器" if ZH else "Choose the Proton or Wine runner used to launch this program",
+    "program_args": "启动参数" if ZH else "Launch arguments",
+    "program_args_desc": "追加在程序路径后的命令行参数，例如 -krqlv=hd" if ZH else "Command-line arguments appended after the program path, e.g. -krqlv=hd",
+    "run": "开始运行" if ZH else "Start",
+    "reselect": "修改配置" if ZH else "Edit Config",
+    "cancel": "取消" if ZH else "Cancel",
+    "choose_env": "设置运行环境" if ZH else "Configure runtime environment",
+    "browse": "浏览" if ZH else "Browse",
+    "display": "其他设置" if ZH else "Other Settings",
+    "gamescope": "Gamescope" if ZH else "Gamescope",
+    "gamescope_desc": "出现兼容问题时可以尝试使用 gamescope 运行" if ZH else "Try running with Gamescope when compatibility issues occur",
+    "use_gamescope": "使用 Gamescope" if ZH else "Use Gamescope",
+    "fullscreen": "全屏运行" if ZH else "Fullscreen",
+    "resolution": "游戏分辨率" if ZH else "Game resolution",
+    "fps": "帧率限制" if ZH else "Frame-rate limit",
+    "unset": "不指定" if ZH else "Unset",
+    "unlimited": "不限制" if ZH else "Unlimited",
+    "custom": "自定义..." if ZH else "Custom...",
+    "custom_resolution": "自定义分辨率，例如 1366x768" if ZH else "Custom resolution, e.g. 1366x768",
+    "custom_fps": "自定义帧率" if ZH else "Custom FPS",
+    "fsr": "FSR 超分辨率" if ZH else "FSR upscaling",
+    "mangohud": "MangoHud" if ZH else "MangoHud",
+    "mangohud_desc": "显示帧数和性能占用" if ZH else "Show FPS and performance usage",
+    "wayland": "以 Wayland 运行" if ZH else "Run on Wayland",
+    "wayland_desc": "使用 Wine 的 Wayland 驱动。开启 Gamescope 时不生效；前置环境里已有程序在运行时，沿用它们的显示方式。" if ZH else "Use Wine's Wayland driver. Not with Gamescope; while programs of the prefix are running, it follows how they are shown.",
+    "env_vars": "环境变量" if ZH else "Environment variables",
+    "env_vars_desc": "例如: DXVK_ASYNC=1 PROTON_NO_ESYNC=1" if ZH else "Example: DXVK_ASYNC=1 PROTON_NO_ESYNC=1",
+    "mangohud_missing": "未安装 MangoHud" if ZH else "MangoHud is not installed",
+    "download_runner_title": "安装运行器" if ZH else "Install Runner",
+    "download_runner_question": "{name} 尚未安装。是否下载并安装？" if ZH else "{name} is not installed. Download and install it?",
+    "downloading_runner": "正在下载并安装 {name}..." if ZH else "Downloading and installing {name}...",
+    "download_wait": "下载和安装可能需要几分钟，请稍候" if ZH else "This may take a few minutes. Please wait",
+    "download_failed": "下载或安装运行器失败。" if ZH else "Failed to download or install the runner.",
+    "extra_args": "Gamescope 额外参数" if ZH else "Extra Gamescope arguments",
+    "extra_args_desc": "高级选项：直接追加到 gamescope 命令。" if ZH else "Advanced: appended directly to the gamescope command.",
+    "invalid_resolution": "分辨率格式应为 宽x高，例如 1920x1080。" if ZH else "Resolution must be WIDTHxHEIGHT, e.g. 1920x1080.",
+    "invalid_fps": "帧率必须是数字。" if ZH else "FPS must be a number.",
+    "no_runner": "没有找到 Proton 或 Wine 运行器。" if ZH else "No Proton or Wine runner found.",
+    "select_prefix": "请选择前置环境目录。" if ZH else "Select a prefix directory.",
+    "select_runner": "请选择运行器。" if ZH else "Select a runner.",
+    "no_exe_error": "proton-wrapper-configure: 未提供可执行文件" if ZH else "proton-wrapper-configure: no executable provided",
+    "not_installed": "未安装" if ZH else "not installed",
+}
+
+COMMON_RESOLUTIONS = ["1280x720", "1600x900", "1920x1080", "2560x1440", "3840x2160"]
+COMMON_FPS = ["30", "40", "45", "60", "90", "120", "144", "165", "240"]
+# The first is what a program gets when nothing else is chosen.
+DEFAULT_RUNNERS = (
+    {"id": "we", "name": "WE-Proton", "dir_name": "WE-Proton Latest"},
+    {"id": "dw", "name": "DW-Proton", "dir_name": "DW-Proton Latest"},
+    {"id": "ge", "name": "Proton-GE", "dir_name": "Proton-GE Latest"},
+)
+
+
+def is_resolution(value: str) -> bool:
+    parts = value.lower().split("x", 1)
+    return len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit()
+
+
+def is_number(value: str) -> bool:
+    return value.isdigit()
+
+
+def display_modes():
+    resolutions = []
+    refresh_rates = []
+    display = Gdk.Display.get_default()
+    if not display:
+        return resolutions, refresh_rates
+
+    monitors = display.get_monitors()
+    for index in range(monitors.get_n_items()):
+        monitor = monitors.get_item(index)
+        if not monitor:
+            continue
+        geometry = monitor.get_geometry()
+        if geometry.width > 0 and geometry.height > 0:
+            resolutions.append(f"{geometry.width}x{geometry.height}")
+        refresh = monitor.get_refresh_rate()
+        if refresh > 0:
+            refresh_rates.append(str(round(refresh / 1000)))
+    return resolutions, refresh_rates
+
+
+def unique_preserve_order(values):
+    seen = set()
+    result = []
+    for value in values:
+        if value and value not in seen:
+            seen.add(value)
+            result.append(value)
+    return result
+
+
+def resolution_options():
+    current, _refresh = display_modes()
+    max_width = max((int(value.split("x", 1)[0]) for value in current if is_resolution(value)), default=3840)
+    max_height = max((int(value.split("x", 1)[1]) for value in current if is_resolution(value)), default=2160)
+    common = [
+        value for value in COMMON_RESOLUTIONS
+        if int(value.split("x", 1)[0]) <= max_width and int(value.split("x", 1)[1]) <= max_height
+    ]
+    return ["unset"] + unique_preserve_order(current + common) + ["custom"]
+
+
+def fps_options():
+    _resolutions, current = display_modes()
+    current_numbers = [int(value) for value in current if is_number(value)]
+    max_refresh = max(current_numbers, default=144)
+    common = [value for value in COMMON_FPS if int(value) <= max_refresh]
+    return ["unset"] + unique_preserve_order(current + common) + ["custom"]
+
+
+def section(title: str, description: str | None = None):
+    box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+    title_label = Gtk.Label(label=title, xalign=0)
+    title_label.add_css_class("heading")
+    box.append(title_label)
+    if description:
+        desc_label = Gtk.Label(label=description, xalign=0, wrap=True)
+        desc_label.add_css_class("dim-label")
+        box.append(desc_label)
+    return box
+
+
+def card(title: str, description: str | None = None):
+    box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+    box.add_css_class("settings-card")
+    box.set_margin_top(2)
+    box.set_margin_bottom(2)
+    box.set_margin_start(0)
+    box.set_margin_end(0)
+    header = section(title, description)
+    box.append(header)
+    return box
+
+
+def screen_work_area() -> tuple[int, int]:
+    display = Gdk.Display.get_default()
+    if display:
+        monitors = display.get_monitors()
+        for index in range(monitors.get_n_items()):
+            monitor = monitors.get_item(index)
+            if not monitor:
+                continue
+            geometry = monitor.get_geometry()
+            if geometry.width > 0 and geometry.height > 0:
+                return geometry.width, geometry.height
+    return 1920, 1080
+
+
+def fitted_size(width: int, height: int) -> tuple[int, int]:
+    """Clamp a preferred window size to what the screen can actually show."""
+    area_width, area_height = screen_work_area()
+    return (
+        min(width, max(360, area_width - 80)),
+        min(height, max(320, area_height - 120)),
+    )
+
+
+def scrollable(content: Gtk.Widget, max_height: int) -> Gtk.ScrolledWindow:
+    """A window whose child is this can be resized smaller than its content.
+
+    Without it GTK refuses to shrink the window below the natural size of the
+    form, so on a small screen the lower half is simply cut off.
+    """
+    scroll = Gtk.ScrolledWindow(hexpand=True, vexpand=True)
+    scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+    scroll.set_propagate_natural_width(True)
+    scroll.set_propagate_natural_height(True)
+    scroll.set_max_content_height(max_height)
+    scroll.set_child(content)
+    return scroll
+
+
+def wrap_anywhere(label: Gtk.Label) -> Gtk.Label:
+    """Let a label break inside a word.
+
+    A filesystem path has no spaces to wrap at, so a plain wrapping label
+    demands the full path width and pushes the window wider than the screen.
+    """
+    label.set_wrap(True)
+    label.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
+    return label
+
+
+def action_bar(*buttons: Gtk.Widget) -> Gtk.Box:
+    """Buttons live outside the scroll area so they stay reachable."""
+    box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+    box.set_halign(Gtk.Align.END)
+    box.set_margin_top(12)
+    box.set_margin_bottom(16)
+    box.set_margin_start(18)
+    box.set_margin_end(18)
+    for button in buttons:
+        box.append(button)
+    return box
+
+
+def runner_label(runner: dict) -> str:
+    if runner.get("install_id") and not runner.get("path"):
+        return f'{runner["name"]} · {TEXT["not_installed"]}'
+    detail = runner.get("source") or runner.get("type")
+    return f'{runner["name"]} · {detail}' if detail else runner["name"]
+
+
+def prefer_dark_theme() -> bool:
+    try:
+        result = subprocess.run(
+            ["gsettings", "get", "org.gnome.desktop.interface", "color-scheme"],
+            check=False,
+            text=True,
+            capture_output=True,
+        )
+    except OSError:
+        return False
+    return "prefer-dark" in result.stdout
+
+
+def sync_color_scheme():
+    settings = Gtk.Settings.get_default()
+    if settings:
+        settings.set_property("gtk-application-prefer-dark-theme", prefer_dark_theme())
+
+
+def user_gtk_colors() -> bytes:
+    config_home = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+    colors = config_home / "gtk-4.0" / "colors.css"
+    if colors.is_file():
+        return colors.read_bytes() + b"\n"
+    return b""
+
+
+def install_css():
+    provider = Gtk.CssProvider()
+    provider.load_from_data(user_gtk_colors() + b"""
+.settings-card {
+  background-color: alpha(@theme_fg_color, 0.055);
+  border: 1px solid alpha(@theme_fg_color, 0.08);
+  border-radius: 14px;
+  padding: 14px;
+}
+
+entry:focus,
+entry:focus-within {
+  outline-color: alpha(@theme_fg_color, 0.28);
+  outline-style: solid;
+  outline-width: 1px;
+  outline-offset: -2px;
+  border-color: alpha(@theme_fg_color, 0.28);
+  box-shadow: inset 0 0 0 1px alpha(@theme_fg_color, 0.28);
+}
+
+selection,
+textview text selection,
+label selection,
+entry selection {
+  background-color: alpha(@theme_fg_color, 0.18);
+  color: @theme_fg_color;
+}
+
+checkbutton check:checked {
+  background-color: @accent_bg_color;
+  background-image: none;
+  border-color: @accent_bg_color;
+  color: @accent_fg_color;
+}
+
+progressbar trough {
+  background-color: alpha(@theme_fg_color, 0.14);
+  border-radius: 999px;
+  min-height: 6px;
+}
+
+progressbar trough progress {
+  background-color: @accent_bg_color;
+  border-radius: 999px;
+}
+
+checkbutton check:focus {
+  outline-color: alpha(@theme_fg_color, 0.28);
+  outline-style: solid;
+  outline-width: 1px;
+  outline-offset: -2px;
+  box-shadow: none;
+}
+
+checkbutton:focus,
+checkbutton:focus-within {
+  outline-color: alpha(@theme_fg_color, 0.28);
+  outline-style: solid;
+  outline-width: 1px;
+  outline-offset: -2px;
+  box-shadow: none;
+}
+""")
+    display = Gdk.Display.get_default()
+    if display:
+        Gtk.StyleContext.add_provider_for_display(
+            display,
+            provider,
+            Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION,
+        )
+
+
+def resolve_wrapper() -> str:
+    env = os.environ.get("PROTON_WRAPPER")
+    if env:
+        return env
+    candidate = Path(__file__).resolve().with_name("proton-wrapper")
+    if candidate.is_file() and os.access(candidate, os.X_OK):
+        return str(candidate)
+    return "proton-wrapper"
+
+
+def default_prefix() -> str:
+    return str(Path(os.environ.get("PROTON_PREFIX", Path.home() / ".proton")).expanduser())
+
+
+def has_mangohud() -> bool:
+    return shutil.which("mangohud") is not None
+
+
+def prefix_runner(prefix: Path) -> str:
+    """The proton the prefix was last set up with, as Proton records it."""
+    try:
+        line = (prefix / "config_info").read_text(errors="ignore").splitlines()[1]
+    except (OSError, IndexError):
+        return ""
+    proton = Path(line).parent.parent.parent / "proton"
+    return str(proton.resolve()) if proton.is_file() else ""
+
+
+def env_from_text(value: str) -> dict[str, str]:
+    env = {}
+    try:
+        import shlex
+        parts = shlex.split(value)
+    except ValueError:
+        parts = [line.strip() for line in value.splitlines()]
+    for part in parts:
+        if "=" in part and not part.startswith("="):
+            key, val = part.split("=", 1)
+            env[key] = val
+    return env
+
+
+def cache_file_for(exe: Path) -> Path:
+    cache_home = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
+    cache_dir = cache_home / "proton-wrapper" / "associations"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    key = hashlib.sha256(str(exe).encode()).hexdigest()
+    return cache_dir / f"{key}.conf"
+
+
+def read_cache(path: Path):
+    if not path.is_file():
+        return None
+    data = {}
+    for line in path.read_text(errors="ignore").splitlines():
+        if "=" in line:
+            key, value = line.split("=", 1)
+            data[key] = value
+    prefix = data.get("prefix", "")
+    runner = data.get("runner", "")
+    if prefix and runner and Path(prefix).is_dir() and os.access(runner, os.X_OK):
+        return {
+            "prefix": prefix,
+            "runner": runner,
+            "program_args": data.get("program_args", ""),
+            "gamescope": data.get("gamescope", "0"),
+            "gamescope_fullscreen": data.get("gamescope_fullscreen", "1"),
+            "gamescope_res": data.get("gamescope_res", ""),
+            "gamescope_fps": data.get("gamescope_fps", ""),
+            "gamescope_fsr": data.get("gamescope_fsr", "0"),
+            "gamescope_args": data.get("gamescope_args", ""),
+            "mangohud": "1" if data.get("mangohud", "0") == "1" and has_mangohud() else "0",
+            "wayland": "1" if data.get("wayland", "0") == "1" else "0",
+            "env_vars": unquote(data.get("env_vars", "")),
+        }
+    return None
+
+
+def write_cache(path: Path, exe: Path, prefix: str, runner: str, options: dict):
+    # keep the name the manager shows, which may have been renamed, and the
+    # Steam game it is, through which the manager starts it
+    name = steam_appid = ""
+    if path.is_file():
+        for line in path.read_text(errors="ignore").splitlines():
+            if line.startswith("name="):
+                name = line.split("=", 1)[1]
+            elif line.startswith("steam_appid="):
+                steam_appid = line.split("=", 1)[1]
+    path.write_text(
+        (f"name={name}\n" if name else "")
+        + f"exe={exe}\n"
+        f"prefix={prefix}\n"
+        f"runner={runner}\n"
+        f"program_args={options.get('program_args', '')}\n"
+        f"gamescope={options.get('gamescope', '0')}\n"
+        f"gamescope_fullscreen={options.get('gamescope_fullscreen', '1')}\n"
+        f"gamescope_res={options.get('gamescope_res', '')}\n"
+        f"gamescope_fps={options.get('gamescope_fps', '')}\n"
+        f"gamescope_fsr={options.get('gamescope_fsr', '0')}\n"
+        f"gamescope_args={options.get('gamescope_args', '')}\n"
+        f"mangohud={options.get('mangohud', '0')}\n"
+        f"wayland={options.get('wayland', '0')}\n"
+        f"env_vars={quote(options.get('env_vars', ''))}\n"
+        + (f"steam_appid={steam_appid}\n" if steam_appid else "")
+        + "source=configured\n"
+    )
+
+
+def normalize_exe_arg(value: str) -> Path:
+    value = value.strip()
+    parsed = urlparse(value)
+    if parsed.scheme == "file":
+        return Path(unquote(parsed.path)).expanduser().resolve(strict=False)
+    return Path(value).expanduser().resolve(strict=False)
+
+
+def parse_runners(output: str):
+    runners = []
+    name = kind = source = ""
+    for line in output.splitlines():
+        if not line.strip():
+            continue
+        if ":" not in line:
+            name = line.strip().removeprefix("* ").strip()
+        elif line.startswith("      type:   "):
+            kind = line.removeprefix("      type:   ")
+        elif line.startswith("      source: "):
+            source = line.removeprefix("      source: ")
+        elif line.startswith("      path:   "):
+            runners.append({
+                "name": name,
+                "type": kind,
+                "source": source,
+                "path": line.removeprefix("      path:   "),
+            })
+    return runners
+
+
+def runner_default_id(runner: dict) -> str:
+    path = runner.get("path", "")
+    name = runner.get("name", "")
+    for default in DEFAULT_RUNNERS:
+        dir_name = default["dir_name"]
+        if name == dir_name or f"/{dir_name}/" in path:
+            return default["id"]
+    return ""
+
+
+def with_default_runners(installed: list[dict]) -> list[dict]:
+    runners = []
+    seen_paths = set()
+    # wherever it is, in Steam's folder or the old one, it need not be downloaded
+    installed_defaults = set()
+    for runner in installed:
+        path = runner.get("path", "")
+        if path in seen_paths:
+            continue
+        seen_paths.add(path)
+        default_id = runner_default_id(runner)
+        if default_id:
+            runner = {**runner, "default_id": default_id}
+            installed_defaults.add(default_id)
+        runners.append(runner)
+
+    for default in DEFAULT_RUNNERS:
+        if default["id"] in installed_defaults:
+            continue
+        runners.append({
+            "name": default["name"],
+            "type": "proton",
+            "source": TEXT["not_installed"],
+            "path": "",
+            "install_id": default["id"],
+        })
+    return runners
+
+
+def load_runners(wrapper: str):
+    try:
+        result = subprocess.run([wrapper, "--list-runner"], check=False, text=True, capture_output=True)
+    except OSError:
+        return with_default_runners([])
+    return with_default_runners(parse_runners(result.stdout))
+
+
+def gamescope_args(options: dict) -> list[str]:
+    args = []
+    if options.get("gamescope") != "1":
+        pass
+    else:
+        args.append("--gamescope")
+        if options.get("gamescope_fullscreen", "1") == "1":
+            args.append("--fullscreen")
+        if options.get("gamescope_res"):
+            args.extend(["--res", options["gamescope_res"]])
+        if options.get("gamescope_fps"):
+            args.extend(["--fps", options["gamescope_fps"]])
+        if options.get("gamescope_fsr") == "1":
+            args.append("--fsr")
+        if options.get("gamescope_args"):
+            args.extend(["--args", options["gamescope_args"]])
+    if options.get("mangohud") == "1":
+        args.append("--mangohud")
+    if options.get("wayland") == "1" and options.get("gamescope") != "1":
+        args.append("--wayland")
+    return args
+
+
+def gamescope_summary(options: dict) -> str:
+    suffix = ", MangoHud" if options.get("mangohud") == "1" else ""
+    if options.get("gamescope") != "1":
+        return "Gamescope: " + ("关闭" if ZH else "off") + suffix
+    parts = ["Gamescope"]
+    parts.append("全屏" if options.get("gamescope_fullscreen", "1") == "1" and ZH else "fullscreen" if options.get("gamescope_fullscreen", "1") == "1" else "窗口" if ZH else "windowed")
+    if options.get("gamescope_res"):
+        parts.append(options["gamescope_res"])
+    if options.get("gamescope_fps"):
+        parts.append((options["gamescope_fps"] + " FPS"))
+    if options.get("gamescope_fsr") == "1":
+        parts.append("FSR")
+    if options.get("gamescope_args"):
+        parts.append(options["gamescope_args"])
+    if options.get("mangohud") == "1":
+        parts.append("MangoHud")
+    return ", ".join(parts)
+
+
+class SelectorApp(Gtk.Application):
+    def __init__(self, exe: Path):
+        super().__init__(application_id="io.github.protonwrapper.proton_wrapper_configure")
+        self.exe = exe
+        self.wrapper = resolve_wrapper()
+        self.cache_file = cache_file_for(exe)
+        self.mangohud_available = has_mangohud()
+        self.window = None
+        self.exe_entry = None
+        self.program_args_entry = None
+        self.prefix_entry = None
+        self.selected_runner = None
+        self.selected_runner_install_id = None
+        self.runners = []
+        self.runner_combo = None
+        self.runner_detail = None
+        self.gamescope_check = None
+        self.fullscreen_check = None
+        self.res_combo = None
+        self.custom_res_entry = None
+        self.fps_combo = None
+        self.custom_fps_entry = None
+        self.fsr_check = None
+        self.mangohud_check = None
+        self.mangohud_missing_label = None
+        self.wayland_check = None
+        self.env_vars_entry = None
+        self.extra_args_entry = None
+
+    def do_activate(self):
+        sync_color_scheme()
+        install_css()
+        cache = read_cache(self.cache_file)
+        if cache:
+            self.show_cache_window(cache)
+        else:
+            self.show_select_window()
+
+    def show_error(self, message: str):
+        dialog = Gtk.MessageDialog(
+            transient_for=self.window,
+            modal=True,
+            message_type=Gtk.MessageType.ERROR,
+            buttons=Gtk.ButtonsType.OK,
+            text=message,
+        )
+        dialog.connect("response", lambda d, _r: d.close())
+        dialog.present()
+
+    def offer_download_runner(self, runner: dict, prefix: str, options: dict, old_cache_file: Path):
+        name = runner.get("name") or runner.get("install_id") or TEXT["runner"]
+        dialog = Gtk.MessageDialog(
+            transient_for=self.window,
+            modal=True,
+            message_type=Gtk.MessageType.QUESTION,
+            buttons=Gtk.ButtonsType.YES_NO,
+            text=TEXT["download_runner_title"],
+            secondary_text=TEXT["download_runner_question"].format(name=name),
+        )
+
+        def on_response(_d, response):
+            dialog.close()
+            if response == Gtk.ResponseType.YES:
+                self.download_runner_async(runner, prefix, options, old_cache_file)
+
+        dialog.connect("response", on_response)
+        dialog.present()
+
+    def download_runner_async(self, runner: dict, prefix: str, options: dict, old_cache_file: Path):
+        install_id = runner.get("install_id")
+        if not install_id:
+            self.show_error(TEXT["select_runner"])
+            return
+        name = runner.get("name") or install_id or TEXT["runner"]
+        spinner_window = Gtk.ApplicationWindow(application=self, title=TEXT["download_runner_title"])
+        spinner_window.set_default_size(360, 120)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        box.set_margin_top(20)
+        box.set_margin_bottom(20)
+        box.set_margin_start(20)
+        box.set_margin_end(20)
+        box.set_halign(Gtk.Align.CENTER)
+        box.set_valign(Gtk.Align.CENTER)
+        progress = Gtk.ProgressBar()
+        progress.set_size_request(260, -1)
+        progress.set_pulse_step(0.08)
+        downloading_text = TEXT["downloading_runner"].format(name=name)
+        label = Gtk.Label(label=downloading_text)
+        detail = Gtk.Label(label=TEXT["download_wait"])
+        detail.add_css_class("dim-label")
+        box.append(progress)
+        box.append(label)
+        box.append(detail)
+        spinner_window.set_child(box)
+        spinner_window.present()
+        tick = {"count": 0}
+
+        def pulse_progress():
+            tick["count"] += 1
+            progress.pulse()
+            label.set_text(downloading_text.rstrip(".") + "." * ((tick["count"] % 3) + 1))
+            return True
+
+        pulse_id = GLib.timeout_add(500, pulse_progress)
+
+        def run_download():
+            try:
+                result = subprocess.run(
+                    [self.wrapper, "--install", install_id],
+                    check=False,
+                    text=True,
+                    capture_output=True,
+                )
+                return result.returncode == 0
+            except OSError:
+                return False
+
+        def on_download_done(result, error):
+            GLib.source_remove(pulse_id)
+            spinner_window.close()
+            if error or not result:
+                self.show_error(TEXT["download_failed"])
+                return
+            self.runners = load_runners(self.wrapper)
+            installed = next((item for item in self.runners if item.get("default_id") == install_id and item.get("path")), None)
+            if not installed:
+                self.show_error(TEXT["no_runner"])
+                return
+            self.populate_runner_combo(installed["path"])
+            write_cache(self.cache_file, self.exe, prefix, installed["path"], options)
+            if old_cache_file != self.cache_file:
+                old_cache_file.unlink(missing_ok=True)
+            self.run_with(prefix, installed["path"], options)
+
+        import threading
+
+        def thread_wrapper():
+            success = run_download()
+            GLib.idle_add(lambda: on_download_done(success, None))
+
+        thread = threading.Thread(target=thread_wrapper, daemon=True)
+        thread.start()
+
+    def run_with(self, prefix: str, runner: str, options: dict | None = None):
+        options = options or {}
+        command = [self.wrapper, "-p", prefix, "--runner", runner]
+        command.extend(gamescope_args(options))
+        command.append(str(self.exe))
+        env = os.environ.copy()
+        env.update(env_from_text(options.get("env_vars", "")))
+        subprocess.Popen(command, env=env)
+        self.quit()
+
+    def show_cache_window(self, cache):
+        self.window = Gtk.ApplicationWindow(application=self, title=TEXT["title"])
+        window_width, window_height = fitted_size(620, 420)
+        self.window.set_default_size(window_width, window_height)
+
+        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=18)
+        outer.set_margin_top(20)
+        outer.set_margin_bottom(4)
+        outer.set_margin_start(20)
+        outer.set_margin_end(20)
+
+        heading = Gtk.Label(label=TEXT["cached_title"], xalign=0)
+        heading.add_css_class("title-2")
+        outer.append(heading)
+
+        content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+
+        prefix_card = card(TEXT["prefix"])
+        prefix = wrap_anywhere(Gtk.Label(label=cache["prefix"], xalign=0))
+        prefix.add_css_class("dim-label")
+        prefix.set_max_width_chars(58)
+        prefix_card.append(prefix)
+        content.append(prefix_card)
+
+        runner_card = card(TEXT["runner"])
+        runner = wrap_anywhere(Gtk.Label(label=cache["runner"], xalign=0))
+        runner.add_css_class("dim-label")
+        runner.set_max_width_chars(58)
+        runner_card.append(runner)
+        content.append(runner_card)
+
+        if cache.get("program_args"):
+            program_args_card = card(TEXT["program_args"])
+            program_args = Gtk.Label(label=cache["program_args"], xalign=0, wrap=True)
+            program_args.add_css_class("dim-label")
+            program_args_card.append(program_args)
+            content.append(program_args_card)
+
+        gamescope_card = card(TEXT["gamescope"])
+        gamescope = Gtk.Label(label=gamescope_summary(cache), xalign=0, wrap=True)
+        gamescope.add_css_class("dim-label")
+        gamescope_card.append(gamescope)
+        content.append(gamescope_card)
+
+        other_card = card(TEXT["display"])
+        other_text = []
+        other_text.append(TEXT["mangohud"] + ": " + ("开" if ZH and cache.get("mangohud") == "1" else "关" if ZH else "on" if cache.get("mangohud") == "1" else "off"))
+        wayland_on = cache.get("wayland") == "1" and cache.get("gamescope") != "1"
+        other_text.append(TEXT["wayland"] + ": " + (("开" if wayland_on else "关") if ZH else ("on" if wayland_on else "off")))
+        if cache.get("env_vars"):
+            other_text.append(TEXT["env_vars"] + ": " + cache["env_vars"])
+        other = Gtk.Label(label="\n".join(other_text), xalign=0, wrap=True)
+        other.add_css_class("dim-label")
+        other_card.append(other)
+        content.append(other_card)
+
+        question = Gtk.Label(label=TEXT["cached_question"], xalign=0)
+        content.append(question)
+        outer.append(content)
+
+        cancel = Gtk.Button(label=TEXT["cancel"])
+        reselect = Gtk.Button(label=TEXT["reselect"])
+        run = Gtk.Button(label=TEXT["run"])
+        cancel.connect("clicked", lambda _b: self.quit())
+        reselect.connect("clicked", lambda _b: (self.window.close(), self.show_select_window(cache)))
+        run.connect("clicked", lambda _b: self.run_with(cache["prefix"], cache["runner"], cache))
+
+        root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        root.append(scrollable(outer, window_height))
+        root.append(action_bar(cancel, reselect, run))
+
+        self.window.set_child(root)
+        self.window.present()
+
+    def show_select_window(self, initial: dict | None = None):
+        self.window = Gtk.ApplicationWindow(application=self, title=TEXT["title"])
+        window_width, window_height = fitted_size(820, 620)
+        self.window.set_default_size(window_width, window_height)
+
+        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
+        outer.set_margin_top(18)
+        outer.set_margin_bottom(4)
+        outer.set_margin_start(18)
+        outer.set_margin_end(18)
+
+        heading = Gtk.Label(label=TEXT["choose_env"], xalign=0)
+        heading.add_css_class("title-2")
+        outer.append(heading)
+
+        exe_card = card(TEXT["program"], TEXT["program_desc"])
+        exe_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        self.exe_entry = Gtk.Entry(placeholder_text=TEXT["program"], hexpand=True)
+        self.exe_entry.set_text(str(self.exe))
+        exe_browse = Gtk.Button(label=TEXT["browse"])
+        exe_browse.connect("clicked", self.on_browse_exe)
+        exe_box.append(self.exe_entry)
+        exe_box.append(exe_browse)
+        exe_card.append(exe_box)
+
+        args_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        args_label = Gtk.Label(label=TEXT["program_args"], xalign=0)
+        args_label.set_size_request(88, -1)
+        self.program_args_entry = Gtk.Entry(placeholder_text="-krqlv=hd", hexpand=True)
+        self.program_args_entry.set_text((initial or {}).get("program_args", ""))
+        args_box.append(args_label)
+        args_box.append(self.program_args_entry)
+        exe_card.append(args_box)
+        args_desc = Gtk.Label(label=TEXT["program_args_desc"], xalign=0, wrap=True)
+        args_desc.add_css_class("dim-label")
+        exe_card.append(args_desc)
+        outer.append(exe_card)
+
+        prefix_card = card(TEXT["prefix"], TEXT["prefix_desc"])
+        prefix_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        self.prefix_entry = Gtk.Entry(placeholder_text=TEXT["prefix"], hexpand=True)
+        self.prefix_entry.set_text((initial or {}).get("prefix") or default_prefix())
+        browse = Gtk.Button(label=TEXT["browse"])
+        browse.connect("clicked", self.on_browse)
+        prefix_box.append(self.prefix_entry)
+        prefix_box.append(browse)
+        prefix_card.append(prefix_box)
+        outer.append(prefix_card)
+
+        runner_card = card(TEXT["runner"], TEXT["runner_desc"])
+        self.runners = load_runners(self.wrapper)
+        runner_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        self.runner_combo = Gtk.ComboBoxText(hexpand=False)
+        self.runner_combo.set_size_request(260, -1)
+        initial_runner = (initial or {}).get("runner", "")
+        self.runner_combo.connect("changed", self.on_runner_changed)
+        self.populate_runner_combo(initial_runner)
+        runner_box.append(self.runner_combo)
+        runner_card.append(runner_box)
+
+        self.runner_detail = wrap_anywhere(Gtk.Label(xalign=0))
+        self.runner_detail.add_css_class("dim-label")
+        runner_card.append(self.runner_detail)
+        outer.append(runner_card)
+        self.update_runner_detail()
+
+        gamescope_card = card(TEXT["gamescope"], TEXT["gamescope_desc"])
+        gamescope_box = Gtk.Grid(column_spacing=16, row_spacing=8)
+        gamescope_box.set_hexpand(True)
+
+        self.gamescope_check = Gtk.CheckButton(label=TEXT["use_gamescope"])
+        self.gamescope_check.set_active((initial or {}).get("gamescope", "0") == "1")
+        self.gamescope_check.connect("toggled", self.on_gamescope_toggled)
+        gamescope_box.attach(self.gamescope_check, 0, 0, 1, 1)
+
+        self.fullscreen_check = Gtk.CheckButton(label=TEXT["fullscreen"])
+        self.fullscreen_check.set_active((initial or {}).get("gamescope_fullscreen", "1") == "1")
+        gamescope_box.attach(self.fullscreen_check, 0, 1, 1, 1)
+
+        res_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        res_label = Gtk.Label(label=TEXT["resolution"], xalign=0)
+        res_label.set_size_request(88, -1)
+        self.res_combo = Gtk.ComboBoxText()
+        self.res_combo.set_hexpand(True)
+        for value in resolution_options():
+            label = TEXT["unset"] if value == "unset" else TEXT["custom"] if value == "custom" else value
+            self.res_combo.append(value, label)
+        initial_res = (initial or {}).get("gamescope_res", "")
+        res_options = resolution_options()
+        if initial_res and initial_res not in res_options:
+            self.res_combo.set_active_id("custom")
+        else:
+            self.res_combo.set_active_id(initial_res or "unset")
+        self.res_combo.connect("changed", self.on_display_option_changed)
+        self.custom_res_entry = Gtk.Entry(placeholder_text=TEXT["custom_resolution"], hexpand=True)
+        if initial_res:
+            self.custom_res_entry.set_text(initial_res)
+        self.custom_res_entry.set_visible(False)
+        res_box.append(res_label)
+        res_box.append(self.res_combo)
+        res_box.append(self.custom_res_entry)
+        gamescope_box.attach(res_box, 1, 0, 1, 1)
+
+        fps_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        fps_label = Gtk.Label(label=TEXT["fps"], xalign=0)
+        fps_label.set_size_request(88, -1)
+        self.fps_combo = Gtk.ComboBoxText()
+        self.fps_combo.set_hexpand(True)
+        for value in fps_options():
+            label = TEXT["unlimited"] if value == "unset" else TEXT["custom"] if value == "custom" else value
+            self.fps_combo.append(value, label)
+        initial_fps = (initial or {}).get("gamescope_fps", "")
+        fps_values = fps_options()
+        if initial_fps and initial_fps not in fps_values:
+            self.fps_combo.set_active_id("custom")
+        else:
+            self.fps_combo.set_active_id(initial_fps or "unset")
+        self.fps_combo.connect("changed", self.on_display_option_changed)
+        self.custom_fps_entry = Gtk.Entry(placeholder_text=TEXT["custom_fps"], hexpand=True)
+        if initial_fps:
+            self.custom_fps_entry.set_text(initial_fps)
+        self.custom_fps_entry.set_visible(False)
+        fps_box.append(fps_label)
+        fps_box.append(self.fps_combo)
+        fps_box.append(self.custom_fps_entry)
+        gamescope_box.attach(fps_box, 1, 1, 1, 1)
+
+        self.fsr_check = Gtk.CheckButton(label=TEXT["fsr"])
+        self.fsr_check.set_active((initial or {}).get("gamescope_fsr", "0") == "1")
+        gamescope_box.attach(self.fsr_check, 0, 2, 2, 1)
+
+        extra_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        extra_label = Gtk.Label(label=TEXT["extra_args"], xalign=0)
+        extra_label.set_size_request(88, -1)
+        self.extra_args_entry = Gtk.Entry(placeholder_text="--mangoapp --force-grab-cursor", hexpand=True)
+        self.extra_args_entry.set_text((initial or {}).get("gamescope_args", ""))
+        extra_box.append(extra_label)
+        extra_box.append(self.extra_args_entry)
+        gamescope_box.attach(extra_box, 0, 3, 2, 1)
+        extra_desc = Gtk.Label(label=TEXT["extra_args_desc"], xalign=0, wrap=True)
+        extra_desc.add_css_class("dim-label")
+        gamescope_box.attach(extra_desc, 0, 4, 2, 1)
+        gamescope_card.append(gamescope_box)
+        outer.append(gamescope_card)
+
+        display_card = card(TEXT["display"])
+        display_box = Gtk.Grid(column_spacing=16, row_spacing=8)
+        display_box.set_hexpand(True)
+        self.mangohud_check = Gtk.CheckButton(label=TEXT["mangohud"])
+        self.mangohud_check.set_active(self.mangohud_available and (initial or {}).get("mangohud", "0") == "1")
+        self.mangohud_check.set_sensitive(self.mangohud_available)
+        display_box.attach(self.mangohud_check, 0, 0, 2, 1)
+        mangohud_desc = Gtk.Label(label=TEXT["mangohud_desc"], xalign=0, wrap=True)
+        mangohud_desc.add_css_class("dim-label")
+        display_box.attach(mangohud_desc, 0, 1, 2, 1)
+        next_row = 2
+        if not self.mangohud_available:
+            self.mangohud_missing_label = Gtk.Label(label=TEXT["mangohud_missing"], xalign=0, wrap=True)
+            self.mangohud_missing_label.add_css_class("dim-label")
+            display_box.attach(self.mangohud_missing_label, 0, 2, 2, 1)
+            next_row = 3
+
+        self.wayland_check = Gtk.CheckButton(label=TEXT["wayland"])
+        self.wayland_check.set_active((initial or {}).get("wayland", "0") == "1")
+        display_box.attach(self.wayland_check, 0, next_row, 2, 1)
+        wayland_desc = Gtk.Label(label=TEXT["wayland_desc"], xalign=0, wrap=True)
+        wayland_desc.add_css_class("dim-label")
+        display_box.attach(wayland_desc, 0, next_row + 1, 2, 1)
+        next_row += 2
+
+        env_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        env_label = Gtk.Label(label=TEXT["env_vars"], xalign=0)
+        env_label.set_size_request(88, -1)
+        self.env_vars_entry = Gtk.Entry(placeholder_text="DXVK_ASYNC=1 PROTON_NO_ESYNC=1", hexpand=True)
+        self.env_vars_entry.set_text((initial or {}).get("env_vars", ""))
+        env_box.append(env_label)
+        env_box.append(self.env_vars_entry)
+        display_box.attach(env_box, 0, next_row, 2, 1)
+        env_desc = Gtk.Label(label=TEXT["env_vars_desc"], xalign=0, wrap=True)
+        env_desc.add_css_class("dim-label")
+        display_box.attach(env_desc, 0, next_row + 1, 2, 1)
+        display_card.append(display_box)
+        outer.append(display_card)
+        self.on_gamescope_toggled(self.gamescope_check)
+
+        cancel = Gtk.Button(label=TEXT["cancel"])
+        run = Gtk.Button(label=TEXT["run"])
+        cancel.connect("clicked", lambda _b: self.quit())
+        run.connect("clicked", self.on_run)
+
+        root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        root.append(scrollable(outer, window_height))
+        root.append(action_bar(cancel, run))
+
+        self.window.set_child(root)
+        self.window.present()
+
+    def populate_runner_combo(self, active_path: str = ""):
+        if not self.runner_combo:
+            return
+        self.runner_combo.remove_all()
+        self.selected_runner = None
+        self.selected_runner_install_id = None
+        if not active_path and self.prefix_entry:
+            active_path = prefix_runner(Path(self.prefix_entry.get_text()).expanduser())
+        active_index = None
+        for index, runner in enumerate(self.runners):
+            self.runner_combo.append(str(index), runner_label(runner))
+            if active_path and runner.get("path") == active_path:
+                active_index = index
+        if active_index is None:  # the default runner, installed or offered for download
+            default_id = DEFAULT_RUNNERS[0]["id"]
+            active_index = next((index for index, runner in enumerate(self.runners)
+                                 if default_id in (runner.get("default_id"), runner.get("install_id"))), 0)
+        if self.runners:
+            self.runner_combo.set_active_id(str(active_index))
+            self.set_selected_runner(self.runners[active_index])
+        self.update_runner_detail()
+
+    def set_selected_runner(self, runner: dict):
+        self.selected_runner = runner.get("path") or None
+        self.selected_runner_install_id = runner.get("install_id") or None
+
+    def on_runner_changed(self, combo):
+        active_id = combo.get_active_id()
+        if active_id is None:
+            self.selected_runner = None
+            self.selected_runner_install_id = None
+            self.update_runner_detail()
+            return
+        index = int(active_id)
+        if 0 <= index < len(self.runners):
+            self.set_selected_runner(self.runners[index])
+        self.update_runner_detail()
+
+    def update_runner_detail(self):
+        if not self.runner_detail:
+            return
+        active_id = self.runner_combo.get_active_id() if self.runner_combo else None
+        if active_id is None:
+            self.runner_detail.set_text("")
+            return
+        index = int(active_id)
+        if 0 <= index < len(self.runners):
+            runner = self.runners[index]
+            if runner.get("install_id") and not runner.get("path"):
+                self.runner_detail.set_text(f'{runner["type"]} · {runner["source"]}')
+            else:
+                self.runner_detail.set_text(f'{runner["type"]} · {runner["source"]}\n{runner["path"]}')
+        else:
+            self.runner_detail.set_text("")
+
+    def on_browse(self, _button):
+        dialog = Gtk.FileChooserNative(
+            title=TEXT["prefix"],
+            transient_for=self.window,
+            action=Gtk.FileChooserAction.SELECT_FOLDER,
+            accept_label=TEXT["browse"],
+            cancel_label=TEXT["cancel"],
+        )
+        dialog.connect("response", self.on_folder_response)
+        dialog.show()
+
+    def on_browse_exe(self, _button):
+        dialog = Gtk.FileChooserNative(
+            title=TEXT["program"],
+            transient_for=self.window,
+            action=Gtk.FileChooserAction.OPEN,
+            accept_label=TEXT["browse"],
+            cancel_label=TEXT["cancel"],
+        )
+        dialog.connect("response", self.on_exe_response)
+        dialog.show()
+
+    def on_exe_response(self, dialog, response):
+        if response == Gtk.ResponseType.ACCEPT:
+            file = dialog.get_file()
+            if file:
+                path = file.get_path()
+                if path and self.exe_entry:
+                    self.exe_entry.set_text(path)
+        dialog.destroy()
+
+    def on_folder_response(self, dialog, response):
+        if response == Gtk.ResponseType.ACCEPT:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", DeprecationWarning)
+                file = dialog.get_file()
+            if file:
+                path = file.get_path()
+                if path:
+                    self.prefix_entry.set_text(path)
+        dialog.destroy()
+
+    def on_gamescope_toggled(self, button):
+        active = button.get_active()
+        if self.wayland_check:  # Gamescope only offers X11
+            self.wayland_check.set_sensitive(not active)
+        if self.fullscreen_check:
+            self.fullscreen_check.set_sensitive(active)
+            if not active:
+                self.fullscreen_check.set_active(True)
+        for widget in (self.res_combo, self.custom_res_entry, self.fps_combo, self.custom_fps_entry, self.fsr_check, self.extra_args_entry):
+            if widget:
+                widget.set_sensitive(active)
+        self.on_display_option_changed(None)
+
+    def on_display_option_changed(self, _widget):
+        if self.custom_res_entry and self.res_combo:
+            self.custom_res_entry.set_visible(self.res_combo.get_active_id() == "custom")
+        if self.custom_fps_entry and self.fps_combo:
+            self.custom_fps_entry.set_visible(self.fps_combo.get_active_id() == "custom")
+
+    def selected_gamescope_options(self):
+        enabled = self.gamescope_check.get_active() if self.gamescope_check else False
+        res = self.res_combo.get_active_id() if self.res_combo else ""
+        fps = self.fps_combo.get_active_id() if self.fps_combo else ""
+        if res == "unset":
+            res = ""
+        if fps == "unset":
+            fps = ""
+        if res == "custom":
+            res = self.custom_res_entry.get_text().strip()
+            if not is_resolution(res):
+                self.show_error(TEXT["invalid_resolution"])
+                return None
+        if fps == "custom":
+            fps = self.custom_fps_entry.get_text().strip()
+            if not is_number(fps):
+                self.show_error(TEXT["invalid_fps"])
+                return None
+        return {
+            "program_args": self.program_args_entry.get_text().strip() if self.program_args_entry else "",
+            "gamescope": "1" if enabled else "0",
+            "gamescope_fullscreen": "1" if self.fullscreen_check and self.fullscreen_check.get_active() else "0",
+            "gamescope_res": res or "",
+            "gamescope_fps": fps or "",
+            "gamescope_fsr": "1" if self.fsr_check and self.fsr_check.get_active() else "0",
+            "gamescope_args": self.extra_args_entry.get_text().strip() if self.extra_args_entry else "",
+            "mangohud": "1" if self.mangohud_check and self.mangohud_check.get_active() else "0",
+            "wayland": "1" if self.wayland_check and self.wayland_check.get_active() and not enabled else "0",
+            "env_vars": self.env_vars_entry.get_text().strip() if self.env_vars_entry else "",
+        }
+
+    def on_run(self, _button):
+        old_cache_file = self.cache_file
+        if self.exe_entry:
+            self.exe = normalize_exe_arg(self.exe_entry.get_text())
+            self.cache_file = cache_file_for(self.exe)
+        prefix = self.prefix_entry.get_text()
+        if not prefix:
+            self.show_error(TEXT["select_prefix"])
+            return
+        options = self.selected_gamescope_options()
+        if options is None:
+            return
+        if self.selected_runner_install_id:
+            active_id = self.runner_combo.get_active_id() if self.runner_combo else None
+            if active_id is None:
+                self.show_error(TEXT["select_runner"])
+                return
+            index = int(active_id)
+            if not 0 <= index < len(self.runners):
+                self.show_error(TEXT["select_runner"])
+                return
+            self.offer_download_runner(self.runners[index], prefix, options, old_cache_file)
+            return
+        if not self.selected_runner:
+            self.show_error(TEXT["select_runner"])
+            return
+        write_cache(self.cache_file, self.exe, prefix, self.selected_runner, options)
+        if old_cache_file != self.cache_file:
+            old_cache_file.unlink(missing_ok=True)
+        self.run_with(prefix, self.selected_runner, options)
+
+
+def main():
+    if len(sys.argv) < 2:
+        print(TEXT["no_exe_error"], file=sys.stderr)
+        return 1
+    exe = normalize_exe_arg(sys.argv[1])
+    app = SelectorApp(exe)
+    try:
+        return app.run([sys.argv[0]])
+    except KeyboardInterrupt:
+        return 130
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

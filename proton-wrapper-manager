@@ -1,0 +1,3573 @@
+#!/usr/bin/env python3
+import hashlib
+import locale
+import os
+import queue
+import re
+import signal
+import shutil
+import struct
+import subprocess
+import sys
+import threading
+import time
+import warnings
+from pathlib import Path
+from urllib.parse import quote, unquote
+
+import gi
+
+gi.require_version("Gtk", "4.0")
+gi.require_version("Gdk", "4.0")
+from gi.repository import Gdk, GLib, Gtk, Pango
+
+
+def is_zh() -> bool:
+    value = (
+        os.environ.get("PROTON_LANG")
+        or os.environ.get("LC_ALL")
+        or os.environ.get("LC_MESSAGES")
+        or os.environ.get("LANG")
+        or locale.getlocale()[0]
+        or ""
+    )
+    return value.lower().startswith("zh")
+
+
+ZH = is_zh()
+TEXT = {
+    "title": "Proton Wrapper 管理器" if ZH else "Proton Wrapper Manager",
+    "prefix": "前置环境" if ZH else "Prefix",
+    "runner": "运行器" if ZH else "Runner",
+    "program_args": "启动参数" if ZH else "Launch arguments",
+    "program_args_desc": "追加在程序路径后的命令行参数，例如 -krqlv=hd" if ZH else "Command-line arguments appended after the program path, e.g. -krqlv=hd",
+    "exe": "执行文件" if ZH else "Executable",
+    "browse": "浏览" if ZH else "Browse",
+    "refresh": "刷新" if ZH else "Refresh",
+    "open_prefix": "打开前置环境目录" if ZH else "Open Prefix Folder",
+    "cancel": "取消" if ZH else "Cancel",
+    "apps": "应用" if ZH else "Apps",
+    "library": "仓库" if ZH else "Repository",
+    "install_dirs": "目录" if ZH else "Folders",
+    "install_dirs_desc": "可能包含 Windows 程序的安装目录。选择目录中的 exe 后会创建应用配置。" if ZH else "Install folders that may contain Windows apps. Pick an exe to create an app config.",
+    "processes": "进程" if ZH else "Processes",
+    "config": "配置" if ZH else "Config",
+    "add_config": "添加配置" if ZH else "Add Config",
+    "cache": "已保存配置" if ZH else "Saved Configs",
+    "run": "运行" if ZH else "Run",
+    "close": "关闭" if ZH else "Close",
+    "log": "日志" if ZH else "Log",
+    "no_log": "暂无日志" if ZH else "No log yet",
+    "open_log_dir": "打开日志目录" if ZH else "Open Log Directory",
+    "export": "导出到应用列表" if ZH else "Export to App List",
+    "cache_dirs": "缓存目录" if ZH else "Cache Dirs",
+    "open_assoc_dir": "打开配置缓存目录" if ZH else "Open Config Cache Directory",
+    "open_icon_dir": "打开图标缓存目录" if ZH else "Open Icon Cache Directory",
+    "open_shortcut_dir": "打开快捷方式目录" if ZH else "Open Shortcut Directory",
+    "delete_shortcut": "删除应用菜单快捷方式" if ZH else "Remove Menu Shortcut",
+    "rename": "重命名" if ZH else "Rename",
+    "menu_name": "显示名称" if ZH else "Display name",
+    "save": "保存" if ZH else "Save",
+    "open_dir": "打开目录" if ZH else "Open Folder",
+    "more": "更多" if ZH else "More",
+    "kill": "结束" if ZH else "Kill",
+    "force_kill": "强制关闭" if ZH else "Force Close",
+    "kill_all": "强制关闭所有进程" if ZH else "Force Close All Processes",
+    "reconfigure": "配置" if ZH else "Config",
+    "display": "其他设置" if ZH else "Other Settings",
+    "gamescope": "Gamescope" if ZH else "Gamescope",
+    "use_gamescope": "使用 Gamescope" if ZH else "Use Gamescope",
+    "gamescope_desc": "出现兼容问题时可以尝试使用 gamescope 运行" if ZH else "Try running with Gamescope when compatibility issues occur",
+    "fullscreen": "全屏运行" if ZH else "Fullscreen",
+    "mangohud": "MangoHud" if ZH else "MangoHud",
+    "mangohud_desc": "显示帧数和性能占用" if ZH else "Show FPS and performance usage",
+    "wayland": "以 Wayland 运行" if ZH else "Run on Wayland",
+    "wayland_desc": "使用 Wine 的 Wayland 驱动。开启 Gamescope 时不生效；前置环境里已有程序在运行时，沿用它们的显示方式。" if ZH else "Use Wine's Wayland driver. Not with Gamescope; while programs of the prefix are running, it follows how they are shown.",
+    "netns": "独立网络" if ZH else "Separate network",
+    "netns_desc": "让这个前置环境的程序运行在独立的网络命名空间里，加速器（TUN 模式）只接管这里的程序，需要 WE-Proton。程序看到的网卡和用户会变，带反作弊的游戏请谨慎。该前置环境的程序全部关闭后生效。" if ZH else "Run the programs of this prefix in their own network namespace, so a game accelerator in TUN mode only takes over these; needs WE-Proton. Programs see another adapter and user, so be careful with anti-cheat. Takes effect once all programs of the prefix are closed.",
+    "netns_missing": "没有安装 passt（pasta）" if ZH else "passt (pasta) is not installed",
+    "resolution": "游戏分辨率" if ZH else "Game resolution",
+    "fps": "帧率限制" if ZH else "Frame-rate limit",
+    "extra_args": "Gamescope 额外参数" if ZH else "Extra Gamescope arguments",
+    "env_vars": "环境变量" if ZH else "Environment variables",
+    "delete": "删除缓存" if ZH else "Delete Cache",
+    "no_apps": "没有找到 Windows 快捷方式。" if ZH else "No Windows shortcuts found.",
+    "no_install_dirs": "没有找到包含 exe 的安装目录。" if ZH else "No install folders with executables found.",
+    "no_processes": "没有找到该前置环境的运行进程。" if ZH else "No processes found for this prefix.",
+    "no_cache": "没有保存过的 exe 配置。" if ZH else "No saved exe configs.",
+    "exported": "已导出" if ZH else "Exported",
+    "removed": "已删除" if ZH else "Removed",
+    "shortcut_still_listed": "快捷方式在前缀的开始菜单或桌面里，仍会列出" if ZH else "the shortcut is in the prefix's start menu or desktop, so it is still listed",
+    "done": "完成" if ZH else "Done",
+    "error": "错误" if ZH else "Error",
+    "status": "状态" if ZH else "Status",
+    "apps_desc": "" if ZH else "",
+    "update_available": "有更新可用" if ZH else "Update Available",
+    "update_confirm_title": "更新运行器" if ZH else "Update Runners",
+    "update_confirm_msg": "以下运行器有新版本可用，是否立即更新？" if ZH else "Updates are available for the following runners. Update now?",
+    "updating": "更新中..." if ZH else "Updating...",
+    "update_done": "更新完成" if ZH else "Update complete",
+    "update_failed": "更新失败" if ZH else "Update failed",
+    "no_update": "已是最新版本" if ZH else "Up to date",
+    "processes_desc": "按 WINEPREFIX / STEAM_COMPAT_DATA_PATH 追踪并强制关闭进程。" if ZH else "Tracks and force closes processes by WINEPREFIX / STEAM_COMPAT_DATA_PATH.",
+    "cache_desc": "管理通过“设置 Windows 软件运行环境”保存的 exe 配置。" if ZH else "Manage exe configs saved by Configure Windows Software.",
+    "view_exes": "应用列表" if ZH else "App List",
+    "add_app": "加入应用" if ZH else "Add App",
+    "delete_dir": "删除目录" if ZH else "Delete Folder",
+    "delete_dir_title": "删除安装目录" if ZH else "Delete Install Folder",
+    "delete_dir_confirm": "将永久删除以下目录及其中所有文件：\n\n{path}\n\n这不会运行 Windows 卸载程序，可能留下注册表、快捷方式和配置残留。是否继续？" if ZH else "This will permanently delete this folder and all files inside:\n\n{path}\n\nThis will not run the Windows uninstaller and may leave registry entries, shortcuts, and config files behind. Continue?",
+    "delete_dir_blocked": "出于安全原因，不能删除此目录。" if ZH else "This folder cannot be deleted for safety reasons.",
+    "delete_prefix": "删除前置环境" if ZH else "Delete Prefix",
+    "delete_prefix_title": "删除前置环境" if ZH else "Delete Prefix",
+    "delete_prefix_confirm": "将永久删除以下前置环境及其中所有文件：\n\n{path}\n\n请确认该前置环境内没有需要保留的存档、配置或用户数据。是否继续？" if ZH else "This will permanently delete this prefix and all files inside:\n\n{path}\n\nMake sure there are no saves, settings, or user data you want to keep. Continue?",
+    "delete_prefix_blocked": "出于安全原因，不能删除此前置环境。" if ZH else "This prefix cannot be deleted for safety reasons.",
+    "delete_prefix_running": "此前置环境仍有运行中的进程，请先关闭。" if ZH else "This prefix still has running processes. Close them first.",
+    "recommended_exes": "推荐入口" if ZH else "Recommended Entries",
+    "other_exes": "其他可执行文件" if ZH else "Other Executables",
+    "exe_count": "{count} 个 exe" if ZH else "{count} exe files",
+    "linked_apps": "已关联应用 {count} 个" if ZH else "{count} linked apps",
+    "search_apps": "搜索应用（Ctrl+F）" if ZH else "Search apps (Ctrl+F)",
+    "search_dirs": "搜索目录（Ctrl+F）" if ZH else "Search folders (Ctrl+F)",
+    "search_processes": "搜索进程名、PID 或命令行（Ctrl+F）" if ZH else "Search name, PID or command line (Ctrl+F)",
+    "no_matches": "没有匹配的结果。" if ZH else "No matches.",
+    "target_missing": "目标不存在" if ZH else "Target missing",
+    "local_runners": "本地" if ZH else "local",
+    "run_via_steam": "通过 Steam 启动" if ZH else "Start through Steam",
+}
+
+
+def expand_path(value: str | Path) -> Path:
+    return Path(value).expanduser().resolve(strict=False)
+
+
+def cache_home() -> Path:
+    return Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
+
+
+def data_home() -> Path:
+    return Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share"))
+
+
+def association_dir() -> Path:
+    return cache_home() / "proton-wrapper" / "associations"
+
+
+def gui_icon_dir() -> Path:
+    return cache_home() / "proton-wrapper" / "icons"
+
+
+def exported_icon_dir() -> Path:
+    return data_home() / "icons" / "proton-wrapper" / "apps"
+
+
+def exported_app_dir() -> Path:
+    return data_home() / "applications" / "proton-wrapper"
+
+
+def run_log_root() -> Path:
+    return cache_home() / "proton-wrapper" / "logs"
+
+
+def app_log_dir(app_id: str) -> Path:
+    return run_log_root() / app_id
+
+
+def latest_log_for_app(app_id: str) -> Path | None:
+    directory = app_log_dir(app_id)
+    latest = directory / "latest.log"
+    if latest.is_file():
+        return latest
+    if not directory.is_dir():
+        return None
+    logs = sorted(directory.glob("*.log"), key=lambda item: item.stat().st_mtime, reverse=True)
+    return logs[0] if logs else None
+
+
+def resolve_sibling(name: str) -> str:
+    candidate = Path(__file__).resolve().with_name(name)
+    if candidate.is_file() and os.access(candidate, os.X_OK):
+        return str(candidate)
+    return name
+
+
+def read_key_values(path: Path) -> dict[str, str]:
+    data = {}
+    if not path.is_file():
+        return data
+    for line in path.read_text(errors="ignore").splitlines():
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        if key == "env_vars":
+            value = unquote(value)
+        data[key] = value
+    return data
+
+
+def collect_prefixes() -> list[Path]:
+    values = [expand_path(os.environ.get("PROTON_PREFIX", Path.home() / ".proton"))]
+    for conf in association_dir().glob("*.conf"):
+        prefix = read_key_values(conf).get("prefix")
+        if prefix:
+            values.append(expand_path(prefix))
+    seen = set()
+    result = []
+    for prefix in values:
+        key = str(prefix)
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(prefix)
+    return result
+
+
+def looks_like_wine_prefix(path: Path) -> bool:
+    return (
+        path.is_dir()
+        and (path / "drive_c").is_dir()
+        and any((path / name).exists() for name in ("system.reg", "user.reg", "dosdevices"))
+    )
+
+
+def looks_like_compat_prefix(path: Path) -> bool:
+    return looks_like_wine_prefix(path / "pfx")
+
+
+def is_steam_zero_prefix(path: Path) -> bool:
+    path = expand_path(path)
+    return path.name == "0" and path.parent.name == "compatdata" and path.parent.parent.name == "steamapps"
+
+
+def add_unique_path(values: list[Path], seen: set[str], path: str | Path) -> None:
+    prefix = expand_path(path)
+    if is_steam_zero_prefix(prefix):
+        return
+    key = str(prefix)
+    if key in seen:
+        return
+    seen.add(key)
+    values.append(prefix)
+
+
+def prefix_mtime(prefix: Path) -> float:
+    try:
+        if looks_like_compat_prefix(prefix):
+            return (prefix / "pfx").stat().st_mtime
+        return prefix.stat().st_mtime
+    except OSError:
+        return 0
+
+
+def process_prefix_from_wineprefix(wineprefix: str) -> Path | None:
+    if not wineprefix:
+        return None
+    path = expand_path(wineprefix)
+    if path.name == "pfx" and looks_like_wine_prefix(path):
+        return path.parent
+    if looks_like_wine_prefix(path):
+        return path
+    return None
+
+
+def collect_running_process_prefixes() -> list[Path]:
+    counts: dict[str, tuple[Path, int]] = {}
+    for proc in Path("/proc").iterdir():
+        if not proc.name.isdigit():
+            continue
+        try:
+            environ = (proc / "environ").read_bytes().split(b"\0")
+        except OSError:
+            continue
+        env = {}
+        for item in environ:
+            if b"=" not in item:
+                continue
+            key, value = item.split(b"=", 1)
+            env[key.decode(errors="replace")] = value.decode(errors="replace")
+        wine_prefix = process_prefix_from_wineprefix(env.get("WINEPREFIX", ""))
+        if wine_prefix and not is_steam_zero_prefix(wine_prefix):
+            key = str(wine_prefix)
+            counts[key] = (wine_prefix, counts.get(key, (wine_prefix, 0))[1] + 1)
+        steam_data = env.get("STEAM_COMPAT_DATA_PATH", "")
+        if steam_data and looks_like_compat_prefix(expand_path(steam_data)):
+            prefix = expand_path(steam_data)
+            if not is_steam_zero_prefix(prefix):
+                key = str(prefix)
+                counts[key] = (prefix, counts.get(key, (prefix, 0))[1] + 1)
+        wrapper_prefix = env.get("PROTON_WRAPPER_PREFIX", "")
+        if wrapper_prefix:
+            prefix = expand_path(wrapper_prefix)
+            key = str(prefix)
+            counts[key] = (prefix, counts.get(key, (prefix, 0))[1] + 1)
+    return [prefix for prefix, _count in sorted(counts.values(), key=lambda item: (-item[1], str(item[0])))]
+
+
+def collect_common_prefixes() -> list[Path]:
+    home = Path.home()
+    patterns = [
+        home / ".wine",
+        home / ".local/share/Steam/steamapps/compatdata/*",
+        home / ".steam/steam/steamapps/compatdata/*",
+        home / ".var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps/compatdata/*",
+        home / "Games/*",
+        home / "games/*",
+        home / "Applications/*",
+        home / "Wine/*",
+        home / "wine/*",
+        home / "Prefixes/*",
+        home / "prefixes/*",
+        home / ".local/share/lutris/prefixes/*",
+        home / ".local/share/bottles/bottles/*",
+        home / ".var/app/com.usebottles.bottles/data/bottles/bottles/*",
+        home / "Games/Heroic/*",
+        home / "Games/legendary/*",
+        home / "Games/epic/*",
+    ]
+    values: list[Path] = []
+    seen: set[str] = set()
+    for pattern in patterns:
+        for path in pattern.parent.glob(pattern.name):
+            if looks_like_compat_prefix(path) or looks_like_wine_prefix(path):
+                add_unique_path(values, seen, path)
+    return sorted(values, key=lambda prefix: (-prefix_mtime(prefix), str(prefix)))
+
+
+def collect_process_prefixes() -> list[Path]:
+    values: list[Path] = []
+    seen: set[str] = set()
+    for group in (collect_running_process_prefixes(), collect_prefixes(), collect_common_prefixes()):
+        for prefix in group:
+            add_unique_path(values, seen, prefix)
+    return values
+
+
+def parse_steam_manifest_value(line: str, key: str) -> str:
+    parts = line.strip().split('"')
+    if len(parts) >= 4 and parts[1] == key:
+        return parts[3]
+    return ""
+
+
+def steam_app_names() -> dict[str, str]:
+    home = Path.home()
+    steamapps_dirs = [
+        home / ".local/share/Steam/steamapps",
+        home / ".var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps",
+    ]
+    names: dict[str, str] = {}
+    for steamapps in steamapps_dirs:
+        if not steamapps.is_dir():
+            continue
+        for manifest in steamapps.glob("appmanifest_*.acf"):
+            appid = manifest.stem.removeprefix("appmanifest_")
+            name = ""
+            try:
+                for line in manifest.read_text(errors="ignore").splitlines():
+                    name = parse_steam_manifest_value(line, "name")
+                    if name:
+                        break
+            except OSError:
+                continue
+            if appid and name:
+                names[appid] = name
+    return names
+
+
+def steam_app_id_for_prefix(prefix: Path) -> str:
+    prefix = expand_path(prefix)
+    if prefix.name.isdigit() and prefix.parent.name == "compatdata" and prefix.parent.parent.name == "steamapps":
+        return prefix.name
+    return ""
+
+
+def process_prefix_label(prefix: Path, app_names: dict[str, str]) -> str:
+    appid = steam_app_id_for_prefix(prefix)
+    if appid:
+        name = app_names.get(appid, "")
+        if name:
+            return f"{name} · Steam"
+        return f"Steam"
+    return str(prefix)
+
+
+def unique_process_prefix_labels(prefixes: list[Path]) -> list[tuple[str, Path]]:
+    app_names = steam_app_names()
+    counts: dict[str, int] = {}
+    labels = []
+    for prefix in prefixes:
+        label = process_prefix_label(prefix, app_names)
+        labels.append((label, prefix))
+        counts[label] = counts.get(label, 0) + 1
+    return [
+        (f"{label} · {prefix}" if counts[label] > 1 else label, prefix)
+        for label, prefix in labels
+    ]
+
+
+def cache_file_for_path(exe: str | Path) -> Path:
+    association_dir().mkdir(parents=True, exist_ok=True)
+    key = hashlib.sha256(str(exe).encode()).hexdigest()
+    return association_dir() / f"{key}.conf"
+
+
+def parse_runners(output: str) -> list[dict[str, str]]:
+    runners = []
+    name = kind = source = ""
+    for line in output.splitlines():
+        if not line.strip():
+            continue
+        if ":" not in line:
+            name = line.strip().removeprefix("* ").strip()
+        elif line.startswith("      type:   "):
+            kind = line.removeprefix("      type:   ")
+        elif line.startswith("      source: "):
+            source = line.removeprefix("      source: ")
+        elif line.startswith("      path:   "):
+            runners.append({
+                "name": name,
+                "type": kind,
+                "source": source,
+                "path": line.removeprefix("      path:   "),
+            })
+    return runners
+
+
+def load_runners(wrapper: str) -> list[dict[str, str]]:
+    try:
+        result = subprocess.run([wrapper, "--list-runner"], check=False, text=True, capture_output=True)
+    except OSError:
+        return []
+    return parse_runners(result.stdout)
+
+
+def runner_label(runner: dict[str, str]) -> str:
+    detail = runner.get("source") or runner.get("type")
+    return f'{runner["name"]} · {detail}' if detail else runner["name"]
+
+
+def safe_filename(value: str) -> str:
+    cleaned = []
+    for char in value:
+        if char.isalnum() or char in ".-_":
+            cleaned.append(char)
+        elif char.isspace():
+            cleaned.append("-")
+        else:
+            cleaned.append("_")
+    name = "".join(cleaned).strip("-._")
+    return name or "windows-app"
+
+
+GENERIC_EXE_NAMES = {
+    "app", "bootstrap", "client", "game", "launcher", "launcher_main", "main", "run", "start",
+}
+
+GENERIC_DIR_NAMES = {
+    "bin", "build", "debug", "dist", "files", "release", "runtime", "runtimes", "win32", "win64", "x64", "x86",
+}
+
+COMMON_RESOLUTIONS = ["1280x720", "1600x900", "1920x1080", "2560x1440", "3840x2160"]
+COMMON_FPS = ["30", "40", "45", "60", "90", "120", "144", "165", "240"]
+
+
+def is_resolution(value: str) -> bool:
+    parts = value.lower().split("x", 1)
+    return len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit()
+
+
+def is_number(value: str) -> bool:
+    return value.isdigit()
+
+
+def display_modes() -> tuple[list[str], list[str]]:
+    resolutions = []
+    refresh_rates = []
+    display = Gdk.Display.get_default()
+    if not display:
+        return resolutions, refresh_rates
+    monitors = display.get_monitors()
+    for index in range(monitors.get_n_items()):
+        monitor = monitors.get_item(index)
+        if not monitor:
+            continue
+        geometry = monitor.get_geometry()
+        if geometry.width > 0 and geometry.height > 0:
+            resolutions.append(f"{geometry.width}x{geometry.height}")
+        refresh = monitor.get_refresh_rate()
+        if refresh > 0:
+            refresh_rates.append(str(round(refresh / 1000)))
+    return resolutions, refresh_rates
+
+
+def unique_preserve_order(values: list[str]) -> list[str]:
+    seen = set()
+    result = []
+    for value in values:
+        if value and value not in seen:
+            seen.add(value)
+            result.append(value)
+    return result
+
+
+def resolution_options() -> list[str]:
+    current, _refresh = display_modes()
+    max_width = max((int(value.split("x", 1)[0]) for value in current if is_resolution(value)), default=3840)
+    max_height = max((int(value.split("x", 1)[1]) for value in current if is_resolution(value)), default=2160)
+    common = [
+        value for value in COMMON_RESOLUTIONS
+        if int(value.split("x", 1)[0]) <= max_width and int(value.split("x", 1)[1]) <= max_height
+    ]
+    return unique_preserve_order(current + common)
+
+
+def fps_options() -> list[str]:
+    _resolutions, current = display_modes()
+    current_numbers = [int(value) for value in current if is_number(value)]
+    max_refresh = max(current_numbers, default=144)
+    common = [value for value in COMMON_FPS if int(value) <= max_refresh]
+    return unique_preserve_order(current + common)
+
+
+def version_like(value: str) -> bool:
+    parts = value.replace("_", ".").replace("-", ".").split(".")
+    return len(parts) > 1 and all(part.isdigit() for part in parts if part)
+
+
+def wine_user_dirs(drive_c: Path) -> list[Path]:
+    """The Windows user folders of a prefix. Proton names its user steamuser,
+    Wine takes the Linux user's name."""
+    users = drive_c / "users"
+    try:
+        names = sorted(child.name for child in users.iterdir() if child.is_dir())
+    except OSError:
+        return []
+    preferred = [name for name in ("steamuser", os.environ.get("USER", "")) if name in names]
+    return [users / name for name in preferred + [name for name in names if name not in preferred]
+            if name.lower() != "public"]
+
+
+def windows_install_roots(prefix: Path) -> list[Path]:
+    pfx = prefix / "pfx" / "drive_c"
+    roots = [pfx / "Program Files", pfx / "Program Files (x86)"]
+    for user in wine_user_dirs(pfx):
+        roots += [user / "AppData" / "Local", user / "AppData" / "Roaming"]
+    return roots
+
+
+IGNORED_INSTALL_DIR_NAMES = {
+    "$recycle.bin", "common files", "desktop", "directx", "drivers", "installer",
+    "microsoft", "microsoft shared", "package cache", "packages", "programdata",
+    "redist", "redistributable", "temp", "tmp", "vc", "vcredist", "windows",
+    "internet explorer", "microsoft.net", "modifiablewindowsapps", "windows mail",
+    "steam", "windows media player", "windows nt", "windows photo viewer",
+}
+
+LOW_VALUE_EXE_WORDS = {
+    "7z", "cefsubprocess", "crash", "crashreport", "crashreporter", "dxsetup",
+    "helper", "install", "installer", "patch", "qtwebengineprocess", "redist",
+    "repair", "report", "service", "setup", "unins", "uninstall", "unitycrashhandler",
+    "update", "updater", "vc_redist", "vcredist",
+}
+
+
+def normalize_match_name(value: str) -> str:
+    return "".join(char.lower() for char in value if char.isalnum())
+
+
+def is_ignored_install_dir(path: Path) -> bool:
+    lower = path.name.lower().strip()
+    if not lower or lower in IGNORED_INSTALL_DIR_NAMES:
+        return True
+    return lower.startswith("windows ") or any(word in lower for word in ("redist", "vcredist", "webview", "crashreport", "uninstall"))
+
+
+def is_low_value_exe(path: Path) -> bool:
+    lower = path.stem.lower().replace("-", "_").replace(" ", "_")
+    return any(word in lower for word in LOW_VALUE_EXE_WORDS)
+
+
+def windows_display_path(prefix: Path, path: Path) -> str:
+    prefix = expand_path(prefix)
+    path = expand_path(path)
+    drive_c = prefix / "pfx" / "drive_c"
+    try:
+        return "C:\\" + str(path.relative_to(drive_c)).replace("/", "\\")
+    except ValueError:
+        return str(path)
+
+
+def safe_relative_path(root: Path, path: Path) -> str:
+    try:
+        rel = path.relative_to(root)
+    except ValueError:
+        return str(path)
+    text = str(rel.parent)
+    return "根目录" if ZH and text == "." else "root" if text == "." else text
+
+
+def file_size_label(path: Path) -> str:
+    try:
+        size = path.stat().st_size
+    except OSError:
+        return ""
+    if size >= 1024 * 1024:
+        return f"{size / 1024 / 1024:.1f} MB"
+    if size >= 1024:
+        return f"{size / 1024:.0f} KB"
+    return f"{size} B"
+
+
+def scan_exes_in_dir(directory: Path, limit: int = 300) -> list[dict[str, object]]:
+    directory = expand_path(directory)
+    if not directory.is_dir():
+        return []
+    root_name = normalize_match_name(directory.name)
+    result = []
+    scanned = 0
+    for exe in sorted(directory.rglob("*.exe"), key=lambda item: str(item).lower()):
+        scanned += 1
+        if scanned > limit:
+            break
+        if not exe.is_file():
+            continue
+        low_value = is_low_value_exe(exe)
+        score = 0
+        stem = normalize_match_name(exe.stem)
+        if stem and root_name and (stem == root_name or stem in root_name or root_name in stem):
+            score += 80
+        if exe.parent == directory:
+            score += 35
+        if exe.parent.name.lower() in {"bin", "game", "games", "launcher", "client"}:
+            score += 12
+        try:
+            if exe.stat().st_size >= 1024 * 1024:
+                score += 10
+        except OSError:
+            pass
+        if low_value:
+            score -= 100
+        result.append({
+            "path": exe,
+            "name": exe.name,
+            "low_value": low_value,
+            "score": score,
+            "detail": f"{safe_relative_path(directory, exe)} · {file_size_label(exe)}".strip(" ·"),
+        })
+    return sorted(result, key=lambda item: (-int(item["score"]), bool(item["low_value"]), str(item["path"]).lower()))
+
+
+def app_path_under_dir(app: dict[str, str], directory: Path) -> bool:
+    values = [app.get("path", ""), app.get("target_exe", "")]
+    for value in values:
+        if not value:
+            continue
+        try:
+            expand_path(value).relative_to(directory)
+            return True
+        except ValueError:
+            continue
+    return False
+
+
+def scan_install_dirs(prefix: Path, apps: list[dict[str, str]] | None = None) -> list[dict[str, object]]:
+    prefix = expand_path(prefix)
+    apps = apps or scan_apps(prefix)
+    roots = windows_install_roots(prefix) + [prefix / "pfx" / "drive_c" / "ProgramData"]
+    result = []
+    seen = set()
+    for root in roots:
+        if not root.is_dir():
+            continue
+        try:
+            children = sorted((item for item in root.iterdir() if item.is_dir()), key=lambda item: item.name.lower())
+        except OSError:
+            continue
+        for child in children:
+            child = expand_path(child)
+            key = str(child)
+            if key in seen or is_ignored_install_dir(child):
+                continue
+            seen.add(key)
+            exes = scan_exes_in_dir(child, limit=120)
+            linked = sum(1 for app in apps if app_path_under_dir(app, child))
+            if not exes and linked == 0:
+                continue
+            result.append({
+                "name": child.name,
+                "path": child,
+                "prefix": prefix,
+                "exe_count": len(exes),
+                "linked_count": linked,
+                "mtime": child.stat().st_mtime if child.exists() else 0,
+            })
+    return sorted(result, key=lambda item: (-int(item["linked_count"]), -float(item["mtime"]), str(item["name"]).lower()))
+
+
+def can_delete_install_dir(prefix: Path, directory: Path) -> bool:
+    prefix = expand_path(prefix)
+    directory = expand_path(directory)
+    roots = windows_install_roots(prefix) + [prefix / "pfx" / "drive_c" / "ProgramData"]
+    blocked = {
+        prefix,
+        prefix / "pfx",
+        prefix / "pfx" / "drive_c",
+        prefix / "pfx" / "drive_c" / "Program Files",
+        prefix / "pfx" / "drive_c" / "Program Files (x86)",
+        prefix / "pfx" / "drive_c" / "ProgramData",
+        prefix / "pfx" / "drive_c" / "users",
+        prefix / "pfx" / "drive_c" / "windows",
+    }
+    if directory in blocked or directory.is_symlink() or not directory.is_dir():
+        return False
+    for root in roots:
+        root = expand_path(root)
+        try:
+            rel = directory.relative_to(root)
+        except ValueError:
+            continue
+        return bool(rel.parts) and rel.parts[0] not in {"", ".", ".."}
+    return False
+
+
+def can_delete_prefix(prefix: Path) -> bool:
+    prefix = expand_path(prefix)
+    home = expand_path(Path.home())
+    blocked = {
+        home,
+        home / ".local",
+        home / ".local/share",
+        home / ".local/share/Steam",
+        home / ".local/share/Steam/steamapps",
+        home / ".local/share/Steam/steamapps/compatdata",
+        home / ".steam",
+        home / ".steam/steam",
+        home / ".steam/steam/steamapps",
+        home / ".steam/steam/steamapps/compatdata",
+        home / ".var",
+        home / ".var/app",
+        home / ".var/app/com.valvesoftware.Steam",
+        home / ".var/app/com.valvesoftware.Steam/.local/share/Steam",
+        home / ".var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps",
+        home / ".var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps/compatdata",
+        Path("/"),
+    }
+    return prefix.is_dir() and not prefix.is_symlink() and prefix not in blocked and (looks_like_compat_prefix(prefix) or looks_like_wine_prefix(prefix))
+
+
+def under_known_install_root(prefix: Path, path: Path) -> bool:
+    path = expand_path(path)
+    for root in windows_install_roots(prefix):
+        try:
+            path.relative_to(root)
+            return True
+        except ValueError:
+            continue
+    return False
+
+
+def inferred_exe_name(path: Path, prefix: Path | None = None) -> str:
+    stem = path.stem
+    if stem.lower() not in GENERIC_EXE_NAMES:
+        return stem
+    if prefix is None or not under_known_install_root(prefix, path):
+        return stem
+    for parent in path.parents:
+        name = parent.name
+        lower = name.lower()
+        if not name or lower in GENERIC_DIR_NAMES or version_like(name):
+            continue
+        if lower in {"program files", "program files (x86)", "drive_c", "pfx"}:
+            break
+        return name
+    return stem
+
+
+def app_key(prefix: Path, path: Path) -> str:
+    return hashlib.sha256((str(prefix) + "\0" + str(path)).encode()).hexdigest()[:10]
+
+
+def app_identity(prefix: Path, path: Path) -> str:
+    return app_key(prefix, path)
+
+
+def app_display_name(app: dict[str, str]) -> str:
+    return app.get("display_name") or app.get("name") or "windows-app"
+
+
+def app_cache_entry(prefix: Path, app: dict[str, str]) -> dict[str, str]:
+    return {
+        "file": app.get("file", str(cache_file_for_path(app["path"]))),
+        "exe": app["path"],
+        "prefix": app.get("prefix", str(prefix)),
+        "runner": app.get("runner", ""),
+        "program_args": app.get("program_args", ""),
+        "gamescope": app.get("gamescope", "0"),
+        "gamescope_fullscreen": app.get("gamescope_fullscreen", "1"),
+        "gamescope_res": app.get("gamescope_res", ""),
+        "gamescope_fps": app.get("gamescope_fps", ""),
+        "gamescope_fsr": app.get("gamescope_fsr", "0"),
+        "gamescope_args": app.get("gamescope_args", ""),
+        "mangohud": app.get("mangohud", "0"),
+        "wayland": app.get("wayland", "0"),
+        "env_vars": app.get("env_vars", ""),
+        "steam_appid": app.get("steam_appid", ""),
+        "source": app.get("source", "configured"),
+        "name": app_display_name(app),
+    }
+
+
+def preferred_desktop_name(app: dict[str, str], display_name: str | None = None) -> str:
+    return safe_filename(display_name or app_display_name(app))
+
+
+def desktop_paths_for_app(prefix: Path, app: dict[str, str], display_name: str | None = None) -> tuple[Path, Path]:
+    base = preferred_desktop_name(app, display_name)
+    key = app_identity(prefix, Path(app["path"]))
+    app_dir = exported_app_dir()
+    return app_dir / f"{base}.desktop", app_dir / f"{base}-{key}.desktop"
+
+
+def icon_paths_for_app(prefix: Path, app: dict[str, str], display_name: str | None = None) -> tuple[Path, Path]:
+    base = preferred_desktop_name(app, display_name)
+    key = app_identity(prefix, Path(app["path"]))
+    icon_dir = exported_icon_dir()
+    return icon_dir / f"{base}.png", icon_dir / f"{base}-{key}.png"
+
+
+def desktop_arg(value: str | Path) -> str:
+    text = str(value)
+    escaped = text.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
+def normalize_icon_name(value: str) -> str:
+    return "".join(char.lower() for char in value if char.isalnum())
+
+
+def icon_candidates_near(path: Path) -> list[Path]:
+    candidates = []
+    for suffix in (".png", ".svg", ".ico", ".xpm"):
+        candidates.append(path.with_suffix(suffix))
+    return candidates
+
+
+def ansi_codepage() -> str:
+    """The code page of a shortcut's ANSI strings. Wine picks it from the
+    locale, as Windows does from the system language."""
+    value = (os.environ.get("LC_ALL") or os.environ.get("LC_CTYPE") or os.environ.get("LANG") or "").lower()
+    for lang, codepage in (("zh_tw", "cp950"), ("zh_hk", "cp950"), ("zh", "gbk"), ("ja", "cp932"), ("ko", "cp949")):
+        if value.startswith(lang):
+            return codepage
+    return "cp1252"
+
+
+def decode_ansi(raw: bytes) -> str:
+    return raw.decode(ansi_codepage(), errors="replace")
+
+
+def read_utf16_cstring(data: bytes, offset: int) -> str:
+    end = offset
+    while end + 1 < len(data) and data[end:end + 2] != b"\0\0":
+        end += 2
+    return data[offset:end].decode("utf-16le", errors="ignore")
+
+
+def read_lnk_string(data: bytes, offset: int, unicode: bool) -> tuple[str, int]:
+    if offset + 2 > len(data):
+        return "", offset
+    length = struct.unpack_from("<H", data, offset)[0]
+    offset += 2
+    if unicode:
+        size = length * 2
+        raw = data[offset:offset + size]
+        return raw.decode("utf-16le", errors="ignore").rstrip("\0"), offset + size
+    raw = data[offset:offset + length]
+    return decode_ansi(raw).rstrip("\0"), offset + length
+
+
+def join_lnk_path(base: str, suffix: str) -> str:
+    if suffix and base and not base.lower().endswith(suffix.lower()):
+        return base.rstrip("\\/") + "\\" + suffix.lstrip("\\/")
+    return base
+
+
+def lnk_item_long_name(item: bytes) -> str:
+    """The unicode name a file item keeps in its extension block: the last
+    string there, just before the offset the item ends with."""
+    if len(item) < 20:
+        return ""
+    start = struct.unpack_from("<H", item, len(item) - 2)[0]
+    if not 14 <= start < len(item) - 4 or start + struct.unpack_from("<H", item, start)[0] != len(item):
+        return ""
+    end = len(item) - 4
+    if item[end:end + 2] != b"\0\0":
+        return ""
+    begin = end
+    while begin - 2 >= start + 8 and item[begin - 2:begin] != b"\0\0":
+        begin -= 2
+    return item[begin:end].decode("utf-16le", errors="ignore")
+
+
+def parse_lnk_id_list(id_list: bytes) -> str:
+    """The target as the shell item ID list spells it: a drive, then each
+    folder and the file by their unicode names."""
+    parts: list[str] = []
+    offset = 0
+    while offset + 3 <= len(id_list):
+        size = struct.unpack_from("<H", id_list, offset)[0]
+        if size < 3 or offset + size > len(id_list):
+            break
+        item = id_list[offset:offset + size]
+        offset += size
+        kind = item[2] & 0x70
+        if kind == 0x10 and not parts:  # My Computer
+            continue
+        if kind == 0x20 and not parts:  # a drive, "C:\"
+            parts.append(item[3:].split(b"\0", 1)[0].decode("ascii", errors="ignore").rstrip("\\"))
+        elif kind == 0x30 and parts:  # a folder or a file
+            name = lnk_item_long_name(item) or decode_ansi(item[14:].split(b"\0", 1)[0])
+            if not name:
+                return ""
+            parts.append(name)
+        else:
+            return ""
+    return "\\".join(parts) if len(parts) > 1 else ""
+
+
+LNK_STRINGS = ((0x04, "comment"), (0x08, "relative_path"), (0x10, "workdir"), (0x20, "args"), (0x40, "icon"))
+
+
+def parse_lnk(path: Path) -> dict[str, str]:
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return {}
+    if len(data) < 0x4C or data[:4] != b"L\0\0\0":
+        return {}
+    flags = struct.unpack_from("<I", data, 0x14)[0]
+    is_unicode = bool(flags & 0x80)
+    offset = 0x4C
+    result = {"icon_index": str(struct.unpack_from("<i", data, 0x38)[0])}
+    id_list = b""
+    ansi_target = unicode_target = ""
+
+    if flags & 0x01:
+        if offset + 2 > len(data):
+            return result
+        id_list_size = struct.unpack_from("<H", data, offset)[0]
+        id_list = data[offset + 2:offset + 2 + id_list_size]
+        offset += 2 + id_list_size
+
+    if flags & 0x02:
+        if offset + 4 > len(data):
+            return result
+        link_info_size = struct.unpack_from("<I", data, offset)[0]
+        link_info = data[offset:offset + link_info_size]
+        if len(link_info) >= 0x1C:
+            try:
+                header_size = struct.unpack_from("<I", link_info, 4)[0]
+                local_base_offset = struct.unpack_from("<I", link_info, 16)[0]
+                suffix_offset = struct.unpack_from("<I", link_info, 24)[0]
+                local_base = suffix = b""
+                if local_base_offset and local_base_offset < len(link_info):
+                    local_base = link_info[local_base_offset:].split(b"\0", 1)[0]
+                if suffix_offset and suffix_offset < len(link_info):
+                    suffix = link_info[suffix_offset:].split(b"\0", 1)[0]
+                # latin-1 keeps the bytes as they are, to be decoded below
+                ansi_target = join_lnk_path(local_base.decode("latin-1"), suffix.decode("latin-1"))
+                if header_size >= 0x24 and len(link_info) >= 0x24:
+                    local_base_unicode_offset = struct.unpack_from("<I", link_info, 28)[0]
+                    suffix_unicode_offset = struct.unpack_from("<I", link_info, 32)[0]
+                    unicode_base = unicode_suffix = ""
+                    if local_base_unicode_offset and local_base_unicode_offset < len(link_info):
+                        unicode_base = read_utf16_cstring(link_info, local_base_unicode_offset)
+                    if suffix_unicode_offset and suffix_unicode_offset < len(link_info):
+                        unicode_suffix = read_utf16_cstring(link_info, suffix_unicode_offset)
+                    unicode_target = join_lnk_path(unicode_base, unicode_suffix)
+            except struct.error:
+                pass
+        offset += link_info_size
+
+    # Wine writes the path of the link info in the ANSI code page only, which
+    # need not be the locale's; the ID list has every name in unicode.
+    if unicode_target or (ansi_target and ansi_target.isascii()):
+        target = unicode_target or ansi_target
+    else:
+        target = parse_lnk_id_list(id_list) or decode_ansi(ansi_target.encode("latin-1"))
+    if target:
+        result["target"] = target
+
+    for flag, key in LNK_STRINGS:
+        if not flags & flag:
+            continue
+        value, offset = read_lnk_string(data, offset, is_unicode)
+        if value:
+            result[key] = value
+    return result
+
+
+def parse_lnk_icon_location(path: Path) -> str:
+    return parse_lnk(path).get("icon", "")
+
+
+def parse_lnk_target(path: Path) -> str:
+    return parse_lnk(path).get("target", "")
+
+
+def path_on_disk(path: Path) -> Path:
+    """The path as the disk spells it: Windows ignores case, so a shortcut may
+    spell a folder differently than it was created."""
+    if path.exists():
+        return path
+    current = Path(path.anchor)
+    for part in path.parts[1:]:
+        candidate = current / part
+        if not candidate.exists():
+            lower = part.lower()
+            try:
+                candidate = next(child for child in current.iterdir() if child.name.lower() == lower)
+            except (OSError, StopIteration):
+                return path
+        current = candidate
+    return current
+
+
+def windows_path_to_linux(prefix: Path, value: str) -> Path | None:
+    value = value.strip().strip('"')
+    if not value:
+        return None
+    drive_c = prefix / "pfx" / "drive_c"
+    users = wine_user_dirs(drive_c)
+    profile = f"C:\\users\\{users[0].name if users else 'steamuser'}"
+    env_map = {
+        "systemroot": "C:\\windows",
+        "windir": "C:\\windows",
+        "systemdrive": "C:",
+        "programfiles": "C:\\Program Files",
+        "programfiles(x86)": "C:\\Program Files (x86)",
+        "programw6432": "C:\\Program Files",
+        "programdata": "C:\\ProgramData",
+        "allusersprofile": "C:\\ProgramData",
+        "public": "C:\\users\\Public",
+        "userprofile": profile,
+        "appdata": profile + "\\AppData\\Roaming",
+        "localappdata": profile + "\\AppData\\Local",
+    }
+    value = re.sub(r"%([^%]+)%", lambda match: env_map.get(match.group(1).lower(), match.group(0)), value)
+    value = value.replace("/", "\\")
+    if len(value) >= 3 and value[1] == ":" and value[2] == "\\":
+        drive = value[0].lower()
+        rest = value[3:].replace("\\", "/")
+        if drive == "c":
+            return path_on_disk(drive_c / rest)
+        return path_on_disk(prefix / "pfx" / "dosdevices" / f"{drive}:" / rest)
+    candidate = Path(value).expanduser()
+    if candidate.is_absolute():
+        return candidate
+    return None
+
+
+def icon_cache_key(source: Path, icon_index: str = "") -> str:
+    try:
+        stat = source.stat()
+        seed = f"{source}\0{stat.st_mtime_ns}\0{stat.st_size}\0{icon_index}"
+    except OSError:
+        seed = f"{source}\0{icon_index}"
+    return hashlib.sha256(seed.encode()).hexdigest()[:16]
+
+
+def convert_icon_to_png(source: Path, target: Path) -> bool:
+    try:
+        from PIL import Image
+    except ImportError:
+        return False
+    try:
+        image = Image.open(source)
+        frames = []
+        for index in range(getattr(image, "n_frames", 1)):
+            image.seek(index)
+            frames.append(image.copy().convert("RGBA"))
+        if not frames:
+            return False
+        best = max(frames, key=lambda item: item.width * item.height)
+        if best.width > 256 or best.height > 256:
+            best.thumbnail((256, 256), Image.LANCZOS)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        best.save(target, "PNG")
+        return True
+    except Exception:
+        target.unlink(missing_ok=True)
+        return False
+
+
+def extract_exe_icon_to_png(source: Path, target: Path, icon_index: int = 0) -> bool:
+    icoextract = shutil_which("icoextract")
+    if not icoextract:
+        return False
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.with_suffix(".ico.tmp")
+    # as with Windows, a negative index is the icon's resource ID
+    select = ["-n", str(icon_index)] if icon_index > 0 else ["-i", str(-icon_index)] if icon_index < 0 else []
+    try:
+        result = subprocess.run([icoextract, *select, str(source), str(tmp)], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError:
+        return False
+    if result.returncode != 0 or not tmp.is_file() or tmp.stat().st_size == 0:
+        tmp.unlink(missing_ok=True)
+        return False
+    ok = convert_icon_to_png(tmp, target)
+    tmp.unlink(missing_ok=True)
+    return ok
+
+
+def extracted_icon_path(prefix: Path, source: Path, app_name: str, target_dir: Path | None = None,
+                        icon_index: int = 0) -> Path | None:
+    target_dir = target_dir or gui_icon_dir()
+    key = icon_cache_key(source, str(icon_index) if icon_index else "")
+    target = target_dir / f"{safe_filename(app_name)}-{key}.png"
+    if target.is_file() and target.stat().st_size > 0:
+        return target
+    if source.suffix.lower() == ".ico" and source.is_file():
+        return target if convert_icon_to_png(source, target) else None
+    if source.suffix.lower() not in (".exe", ".dll", ".icl") or not source.is_file():
+        return None
+    if extract_exe_icon_to_png(source, target, icon_index):
+        return target
+    wrestool = shutil_which("wrestool")
+    if not wrestool:
+        return None
+    tmp = target.with_suffix(".ico.tmp")
+    try:
+        result = subprocess.run([wrestool, "-x", "-t", "14", str(source)], check=False, stdout=subprocess.PIPE)
+    except OSError:
+        return None
+    if result.returncode == 0 and result.stdout:
+        tmp.write_bytes(result.stdout)
+        if convert_icon_to_png(tmp, target):
+            tmp.unlink(missing_ok=True)
+            return target
+        tmp.unlink(missing_ok=True)
+    return None
+
+
+def search_icon_tree(root: Path, app_name: str, limit: int = 3000) -> Path | None:
+    if not root.is_dir():
+        return None
+    wanted = normalize_icon_name(app_name)
+    if not wanted:
+        return None
+    best = None
+    scanned = 0
+    for pattern in ("*.png", "*.svg", "*.ico", "*.xpm"):
+        for icon in root.rglob(pattern):
+            scanned += 1
+            if scanned > limit:
+                return best
+            name = normalize_icon_name(icon.stem)
+            if name == wanted:
+                return icon
+            # a name of one character, or none, is part of every other name
+            if len(name) > 1 and (wanted in name or name in wanted):
+                best = best or icon
+    return best
+
+
+def icon_for_app(prefix: Path, app: dict[str, str], target_dir: Path | None = None) -> str:
+    path = Path(app["path"])
+    if path.suffix.lower() == ".lnk":
+        info = parse_lnk(path)
+        icon_source = windows_path_to_linux(prefix, info["icon"]) if info.get("icon") else None
+        if icon_source:
+            try:
+                icon_index = int(info.get("icon_index", "0"))
+            except ValueError:
+                icon_index = 0
+            extracted = extracted_icon_path(prefix, icon_source, app["name"], target_dir, icon_index)
+            if extracted:
+                return str(extracted)
+        # target_exe is already a Linux path
+        if app.get("target_exe"):
+            target_source = Path(app["target_exe"])
+        else:
+            target_source = windows_path_to_linux(prefix, info["target"]) if info.get("target") else None
+        if target_source:
+            extracted = extracted_icon_path(prefix, target_source, app["name"], target_dir)
+            if extracted:
+                return str(extracted)
+    else:
+        extracted = extracted_icon_path(prefix, path, app["name"], target_dir)
+        if extracted:
+            return str(extracted)
+
+    for candidate in icon_candidates_near(path):
+        if candidate.is_file():
+            return str(candidate)
+
+    for root in (
+        prefix / "pfx" / "drive_c" / "windows" / "Installer",
+        prefix / "pfx" / "drive_c" / "ProgramData",
+    ):
+        icon = search_icon_tree(root, app["name"])
+        if icon:
+            return str(icon)
+
+    return "proton-wrapper"
+
+
+def display_message(parent: Gtk.Window | None, title: str, message: str) -> None:
+    dialog = Gtk.MessageDialog(
+        transient_for=parent,
+        modal=True,
+        message_type=Gtk.MessageType.INFO,
+        buttons=Gtk.ButtonsType.OK,
+        text=title,
+        secondary_text=message,
+    )
+    dialog.connect("response", lambda d, _r: d.close())
+    dialog.present()
+
+
+def section(title: str, description: str | None = None) -> Gtk.Box:
+    box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+    title_label = Gtk.Label(label=title, xalign=0)
+    title_label.add_css_class("heading")
+    box.append(title_label)
+    if description:
+        desc = Gtk.Label(label=description, xalign=0, wrap=True)
+        desc.add_css_class("dim-label")
+        box.append(desc)
+    return box
+
+
+def card(title: str, description: str | None = None) -> Gtk.Box:
+    box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+    box.add_css_class("settings-card")
+    box.append(section(title, description))
+    return box
+
+
+def prefer_dark_theme() -> bool:
+    try:
+        result = subprocess.run(
+            ["gsettings", "get", "org.gnome.desktop.interface", "color-scheme"],
+            check=False,
+            text=True,
+            capture_output=True,
+        )
+    except OSError:
+        return False
+    return "prefer-dark" in result.stdout
+
+
+def sync_color_scheme() -> None:
+    settings = Gtk.Settings.get_default()
+    if settings:
+        settings.set_property("gtk-application-prefer-dark-theme", prefer_dark_theme())
+
+
+def user_gtk_colors() -> bytes:
+    colors = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "gtk-4.0" / "colors.css"
+    if colors.is_file():
+        return colors.read_bytes() + b"\n"
+    return b""
+
+
+def install_css() -> None:
+    provider = Gtk.CssProvider()
+    provider.load_from_data(user_gtk_colors() + b"""
+.settings-card {
+  background-color: alpha(@theme_fg_color, 0.055);
+  border: 1px solid alpha(@theme_fg_color, 0.08);
+  border-radius: 14px;
+  padding: 14px;
+}
+.sidebar {
+  padding: 12px;
+  background-color: alpha(@theme_fg_color, 0.035);
+}
+.top-nav {
+  padding: 10px 16px 2px;
+  background-color: transparent;
+}
+.nav-button {
+  padding: 6px 10px;
+  min-height: 34px;
+  min-width: 96px;
+  background-color: transparent;
+  border-color: transparent;
+  border-radius: 0;
+  color: alpha(@theme_fg_color, 0.72);
+}
+.nav-button:hover {
+  background-color: alpha(@theme_fg_color, 0.055);
+  color: @theme_fg_color;
+}
+.nav-button-active {
+  background-color: transparent;
+  border-color: transparent;
+  border-bottom: 2px solid @accent_color;
+  color: @theme_fg_color;
+}
+.row-card {
+  padding: 9px 10px;
+  border-bottom: 1px solid alpha(@theme_fg_color, 0.08);
+}
+.prefix-toolbar {
+  padding: 0;
+}
+.prefix-label {
+  color: alpha(@theme_fg_color, 0.72);
+}
+.prefix-path-label {
+  color: alpha(@theme_fg_color, 0.5);
+  font-size: 0.85em;
+  margin-start: 0;
+}
+entry:focus,
+entry:focus-within {
+  outline-color: alpha(@theme_fg_color, 0.28);
+  outline-style: solid;
+  outline-width: 1px;
+  outline-offset: -2px;
+  border-color: alpha(@theme_fg_color, 0.28);
+  box-shadow: inset 0 0 0 1px alpha(@theme_fg_color, 0.28);
+}
+button:focus,
+menubutton:focus > button,
+row:focus,
+row:focus-within,
+.nav-button:focus,
+.compact-button:focus,
+.menu-button:focus {
+  outline-color: alpha(@theme_fg_color, 0.28);
+  outline-style: solid;
+  outline-width: 1px;
+  outline-offset: -2px;
+  box-shadow: none;
+}
+row:focus,
+row:focus-within {
+  border-color: alpha(@theme_fg_color, 0.18);
+}
+selection {
+  background-color: alpha(@theme_fg_color, 0.18);
+  color: @theme_fg_color;
+}
+textview text selection,
+label selection,
+entry selection {
+  background-color: alpha(@theme_fg_color, 0.18);
+  color: @theme_fg_color;
+}
+checkbutton check:checked {
+  background-color: @accent_bg_color;
+  background-image: none;
+  border-color: @accent_bg_color;
+  color: @accent_fg_color;
+}
+switch:checked {
+  background-color: @accent_bg_color;
+  background-image: none;
+  border-color: @accent_bg_color;
+}
+progressbar trough {
+  background-color: alpha(@theme_fg_color, 0.14);
+  border-radius: 999px;
+  min-height: 6px;
+}
+progressbar trough progress {
+  background-color: @accent_bg_color;
+  border-radius: 999px;
+}
+checkbutton check:focus {
+  outline-color: alpha(@theme_fg_color, 0.28);
+  outline-style: solid;
+  outline-width: 1px;
+  outline-offset: -2px;
+  box-shadow: none;
+}
+checkbutton:focus,
+checkbutton:focus-within {
+  outline-color: alpha(@theme_fg_color, 0.28);
+  outline-style: solid;
+  outline-width: 1px;
+  outline-offset: -2px;
+  box-shadow: none;
+}
+combobox:focus button {
+  outline-color: alpha(@theme_fg_color, 0.28);
+  outline-style: solid;
+  outline-width: 1px;
+  outline-offset: -2px;
+  border-color: alpha(@theme_fg_color, 0.28);
+  box-shadow: none;
+}
+.compact-button {
+  padding: 5px 12px;
+  min-height: 30px;
+  min-width: 0;
+}
+.icon-button {
+  padding: 0;
+  min-height: 34px;
+  min-width: 34px;
+  max-height: 34px;
+  max-width: 34px;
+}
+.icon-button label {
+  min-height: 16px;
+  min-width: 16px;
+  padding: 0;
+  margin: 0;
+}
+.compact-button:hover {
+  background-color: alpha(@theme_fg_color, 0.12);
+  border-color: alpha(@theme_fg_color, 0.22);
+}
+menubutton.compact-button > button:hover {
+  background-color: alpha(@theme_fg_color, 0.12);
+  border-color: alpha(@theme_fg_color, 0.22);
+  border-radius: 8px;
+}
+.compact-button:active {
+  background-color: alpha(@theme_fg_color, 0.18);
+}
+.menu-button {
+  padding: 4px 8px;
+  min-height: 30px;
+  min-width: 30px;
+}
+.run-button {
+  background-color: alpha(@accent_bg_color, 0.16);
+  border-color: alpha(@accent_bg_color, 0.32);
+  color: @theme_fg_color;
+}
+.run-button:hover {
+  background-color: alpha(@accent_bg_color, 0.34);
+  border-color: alpha(@accent_bg_color, 0.58);
+}
+.run-button:active {
+  background-color: alpha(@accent_bg_color, 0.46);
+}
+.update-button {
+  background-color: alpha(@accent_bg_color, 0.16);
+  border-color: alpha(@accent_bg_color, 0.32);
+  color: @theme_fg_color;
+}
+.update-button:hover {
+  background-color: alpha(@accent_bg_color, 0.34);
+  border-color: alpha(@accent_bg_color, 0.58);
+}
+.update-button:active {
+  background-color: alpha(@accent_bg_color, 0.46);
+}
+.menu-item-danger {
+  color: @error_color;
+}
+.app-icon {
+  margin-right: 4px;
+}
+""")
+    display = Gdk.Display.get_default()
+    if display:
+        Gtk.StyleContext.add_provider_for_display(
+            display,
+            provider,
+            Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION,
+        )
+
+
+def shortcut_roots(prefix: Path) -> list[tuple[str, Path]]:
+    """Where installers put shortcuts, the start menus first: of two
+    shortcuts to the same program, the first found is the one listed."""
+    pfx = prefix / "pfx" / "drive_c"
+    users = wine_user_dirs(pfx)
+    return (
+        [("Start Menu", user / "AppData/Roaming/Microsoft/Windows/Start Menu/Programs") for user in users]
+        + [("All Users", pfx / "ProgramData/Microsoft/Windows/Start Menu/Programs")]
+        + [("Desktop", user / "Desktop") for user in users]
+        + [("Public Desktop", pfx / "users/Public/Desktop")]
+    )
+
+
+UNINSTALLER_WORDS = ("unins", "卸载")
+
+
+def app_is_uninstaller(app: dict[str, str]) -> bool:
+    names = (app.get("name", ""), app_display_name(app), Path(app.get("target_exe") or app.get("path", "")).stem)
+    return any(word in name.lower() for name in names for word in UNINSTALLER_WORDS)
+
+
+def collation_key(text: str) -> str:
+    """Sorts names as the locale does, Chinese ones by pinyin."""
+    try:
+        return locale.strxfrm(text.casefold())
+    except (OSError, ValueError):
+        return text.casefold()
+
+
+def app_last_used(prefix: Path, path: str | Path) -> float:
+    """When the app was last started. Each start empties its log folder and
+    creates the log anew, which dates the folder; what the program writes
+    into the log later leaves the folder's date as it is."""
+    try:
+        return app_log_dir(app_identity(prefix, Path(path))).stat().st_mtime
+    except OSError:
+        return 0.0
+
+
+def app_cache_files(prefix: Path, app: dict[str, str]) -> set[Path]:
+    """Every settings file of an app in the prefix: the one the row shows, a
+    shortcut's and its program's, and those written for the same program
+    under another spelling of its path, which the list shows as one."""
+    paths = [Path(app["path"])] + ([Path(app["target_exe"])] if app.get("target_exe") else [])
+    files = {Path(app["file"])} if app.get("file") else set()
+    files.update(cache_file_for_path(path) for path in paths)
+    real = {str(expand_path(path).resolve(strict=False)) for path in paths}
+    for conf in association_dir().glob("*.conf"):
+        data = read_key_values(conf)
+        exe = data.get("exe", "")
+        if not exe or expand_path(data.get("prefix", Path.home() / ".proton")) != expand_path(prefix):
+            continue
+        if str(expand_path(exe).resolve(strict=False)) in real:
+            files.add(conf)
+    return files
+
+
+def mark_app_started(prefix: Path, path: str | Path) -> None:
+    """Date the app's log folder now, as starting it through the wrapper does,
+    so that the list puts the app first at once: the wrapper itself gets there
+    only after a moment, and not under this app's name for a game Steam starts."""
+    directory = app_log_dir(app_identity(expand_path(prefix), Path(path)))
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+        os.utime(directory)
+    except OSError:
+        pass
+
+
+def app_sort_key(app: dict) -> tuple:
+    """Programs first, the most recently used at the top and those never
+    used by name; then uninstallers, and last the shortcuts whose program is
+    gone."""
+    return (app.get("missing") == "1", app_is_uninstaller(app), -app.get("last_used", 0.0),
+            app.get("kind") != "shortcut", collation_key(app_display_name(app)))
+
+
+def scan_apps(prefix: Path) -> list[dict[str, str]]:
+    prefix = expand_path(prefix)
+    shortcuts: dict[str, dict[str, str]] = {}
+    seen = set()
+    shortcut_targets = set()
+    for source, root in shortcut_roots(prefix):
+        if not root.is_dir():
+            continue
+        for lnk in sorted(root.rglob("*.lnk"), key=lambda item: str(item).lower()):
+            real = str(lnk.resolve(strict=False))
+            if real in seen:
+                continue
+            seen.add(real)
+            info = parse_lnk(lnk)
+            target_path = windows_path_to_linux(prefix, info["target"]) if info.get("target") else None
+            if target_path:
+                shortcut_targets.add(str(target_path.resolve(strict=False)))
+            shortcut_cache = read_key_values(cache_file_for_path(lnk))
+            app = {
+                "name": lnk.stem,
+                "display_name": shortcut_cache.get("name", lnk.stem),
+                "source": source,
+                "path": str(lnk),
+                "target_exe": str(target_path) if target_path else "",
+                "args": info.get("args", ""),
+                "missing": "1" if target_path and not target_path.exists() else "",
+                "file": str(cache_file_for_path(lnk)) if shortcut_cache else "",
+                "kind": "shortcut",
+                "last_used": app_last_used(prefix, lnk),
+            }
+            app.update({key: shortcut_cache[key] for key in CONFIG_KEYS if key in shortcut_cache})
+            # installers put the same shortcut on the desktop and in the start
+            # menu; list it once, as the one that has settings if either has
+            key = f'{str(target_path).lower()}\0{app["args"]}' if target_path else real
+            listed = shortcuts.get(key)
+            if listed is None or (app["file"] and not listed["file"]):
+                shortcuts[key] = app
+            # a start from either shortcut is a use of the one listed
+            if listed is not None:
+                shortcuts[key]["last_used"] = max(app["last_used"], listed["last_used"])
+    apps = list(shortcuts.values())
+    for app in apps:
+        # and so is starting its program directly
+        if app["target_exe"]:
+            app["last_used"] = max(app["last_used"], app_last_used(prefix, app["target_exe"]))
+    for entry in collect_cache_entries():
+        entry_prefix = entry.get("prefix", "")
+        exe = entry.get("exe", "")
+        if not entry_prefix or not exe:
+            continue
+        if expand_path(entry_prefix) != prefix:
+            continue
+        exe_path = expand_path(exe)
+        real = str(exe_path.resolve(strict=False))
+        if real in seen or real in shortcut_targets:
+            continue
+        seen.add(real)
+        display_name = inferred_exe_name(exe_path, prefix)
+        apps.append({
+            "name": Path(exe).stem,
+            "display_name": entry.get("name", display_name),
+            "source": entry.get("source", "configured"),
+            "path": str(exe_path),
+            "runner": entry.get("runner", ""),
+            "prefix": entry.get("prefix", str(prefix)),
+            "file": entry.get("file", ""),
+            "program_args": entry.get("program_args", ""),
+            "gamescope": entry.get("gamescope", "0"),
+            "gamescope_fullscreen": entry.get("gamescope_fullscreen", "1"),
+            "gamescope_res": entry.get("gamescope_res", ""),
+            "gamescope_fps": entry.get("gamescope_fps", ""),
+            "gamescope_fsr": entry.get("gamescope_fsr", "0"),
+            "gamescope_args": entry.get("gamescope_args", ""),
+            "mangohud": entry.get("mangohud", "0"),
+            "wayland": entry.get("wayland", "0"),
+            "env_vars": entry.get("env_vars", ""),
+            "steam_appid": entry.get("steam_appid", ""),
+            "kind": "saved-config",
+            "last_used": app_last_used(prefix, exe_path),
+        })
+    return sorted(apps, key=app_sort_key)
+
+
+def desktop_matches_app(path: Path, prefix: Path, app: dict[str, str]) -> bool:
+    data = read_key_values(path)
+    return (
+        data.get("X-Proton-Wrapper-ID") == app_identity(prefix, Path(app["path"]))
+        or (data.get("X-Proton-Wrapper-Prefix") == str(prefix) and data.get("X-Proton-Wrapper-Path") == app["path"])
+    )
+
+
+def exported_desktop_path(prefix: Path, app: dict[str, str], display_name: str | None = None) -> Path:
+    preferred, hashed = desktop_paths_for_app(prefix, app, display_name)
+    if not preferred.exists() or desktop_matches_app(preferred, prefix, app):
+        return preferred
+    return hashed
+
+
+def exported_icon_path(prefix: Path, app: dict[str, str], display_name: str | None = None) -> Path:
+    preferred, hashed = icon_paths_for_app(prefix, app, display_name)
+    desktop = exported_desktop_path(prefix, app, display_name)
+    return preferred if desktop.stem == preferred.stem else hashed
+
+
+def export_app(prefix: Path, app: dict[str, str], wrapper: str, display_name: str | None = None) -> Path:
+    lnk = Path(app["path"])
+    name = (display_name or app_display_name(app)).strip() or app_display_name(app)
+    target = exported_desktop_path(prefix, app, name)
+    target_dir = target.parent
+    target_dir.mkdir(parents=True, exist_ok=True)
+    exec_line = f"{desktop_arg(wrapper)} -p {desktop_arg(prefix)} {desktop_arg(lnk)}"
+    icon_path = exported_icon_path(prefix, app, name)
+    icon_app = dict(app)
+    icon_app["display_name"] = name
+    icon = icon_for_app(prefix, icon_app, icon_path.parent)
+    if icon != "proton-wrapper" and Path(icon).is_file() and Path(icon) != icon_path:
+        icon_path.parent.mkdir(parents=True, exist_ok=True)
+        icon_path.write_bytes(Path(icon).read_bytes())
+        icon = str(icon_path)
+    target.write_text(
+        "[Desktop Entry]\n"
+        "Type=Application\n"
+        f"Name={name}\n"
+        f"Comment=Run {name} with proton-wrapper\n"
+        f"Exec={exec_line}\n"
+        f"Icon={icon}\n"
+        "Terminal=false\n"
+        "Categories=Utility;X-Wine;\n"
+        f"X-Proton-Wrapper-ID={app_identity(prefix, lnk)}\n"
+        f"X-Proton-Wrapper-Prefix={prefix}\n"
+        f"X-Proton-Wrapper-Path={lnk}\n",
+        encoding="utf-8",
+    )
+    target.chmod(0o644)
+    return target
+
+
+def delete_exported_app(prefix: Path, app: dict[str, str]) -> Path:
+    target = exported_desktop_path(prefix, app)
+    target.unlink(missing_ok=True)
+    return target
+
+
+def delete_exported_icon(prefix: Path, app: dict[str, str]) -> Path:
+    target = exported_icon_path(prefix, app)
+    target.unlink(missing_ok=True)
+    return target
+
+
+def read_desktop_name(path: Path) -> str:
+    if not path.is_file():
+        return ""
+    for line in path.read_text(errors="ignore").splitlines():
+        if line.startswith("Name="):
+            return line.split("=", 1)[1]
+    return ""
+
+
+def rewrite_desktop_name(path: Path, name: str) -> None:
+    lines = []
+    changed = False
+    for line in path.read_text(errors="ignore").splitlines():
+        if line.startswith("Name="):
+            lines.append(f"Name={name}")
+            changed = True
+        else:
+            lines.append(line)
+    if not changed:
+        lines.insert(2, f"Name={name}")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def rename_icon_cache_files(old_name: str, new_name: str) -> dict[str, str]:
+    old_base = safe_filename(old_name)
+    new_base = safe_filename(new_name)
+    renamed = {}
+    if old_base == new_base:
+        return renamed
+    # the manager's own icons are named after the shortcut or exe, which
+    # renaming leaves as it is; only exported icons carry the display name
+    for directory in (exported_icon_dir(),):
+        if not directory.is_dir():
+            continue
+        for icon in list(directory.glob(f"{old_base}.png")) + list(directory.glob(f"{old_base}-*.png")):
+            suffix = icon.name[len(old_base):]
+            target = icon.with_name(f"{new_base}{suffix}")
+            if target.exists():
+                renamed[str(icon)] = str(target)
+                continue
+            try:
+                icon.rename(target)
+            except OSError:
+                continue
+            renamed[str(icon)] = str(target)
+    return renamed
+
+
+def rewrite_desktop_icon(path: Path, renamed_icons: dict[str, str]) -> None:
+    if not path.is_file() or not renamed_icons:
+        return
+    lines = []
+    changed = False
+    for line in path.read_text(errors="ignore").splitlines():
+        if line.startswith("Icon="):
+            value = line.split("=", 1)[1]
+            replacement = renamed_icons.get(value)
+            if replacement:
+                lines.append(f"Icon={replacement}")
+                changed = True
+                continue
+        lines.append(line)
+    if changed:
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def maybe_update_desktop_database() -> None:
+    if not shutil_which("update-desktop-database"):
+        return
+    subprocess.run(["update-desktop-database", str(data_home() / "applications")], check=False)
+
+
+def shutil_which(name: str) -> str | None:
+    for part in os.environ.get("PATH", "").split(os.pathsep):
+        candidate = Path(part) / name
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return str(candidate)
+    return None
+
+
+def process_start_time(pid: int) -> str:
+    try:
+        started = Path(f"/proc/{pid}").stat().st_ctime
+    except OSError:
+        return ""
+    seconds = max(0, int(time.time() - started))
+    if seconds < 60:
+        return f"{seconds}s"
+    if seconds < 3600:
+        return f"{seconds // 60}m"
+    return f"{seconds // 3600}h{seconds % 3600 // 60}m"
+
+
+def scan_processes(prefix: Path) -> list[dict[str, str]]:
+    prefix = expand_path(prefix)
+    wineprefixes = []
+    if looks_like_compat_prefix(prefix) or not looks_like_wine_prefix(prefix):
+        wineprefixes.append(str(prefix / "pfx"))
+    if looks_like_wine_prefix(prefix):
+        wineprefixes.append(str(prefix))
+    steam_data = str(prefix)
+    result = []
+    for proc in Path("/proc").iterdir():
+        if not proc.name.isdigit():
+            continue
+        pid = int(proc.name)
+        if pid == os.getpid():
+            continue
+        try:
+            environ = (proc / "environ").read_bytes().split(b"\0")
+        except OSError:
+            continue
+        env = {}
+        matched = False
+        for item in environ:
+            if b"=" in item:
+                key, value = item.split(b"=", 1)
+                env[key.decode(errors="replace")] = value.decode(errors="replace")
+        if env.get("WINEPREFIX", "") in wineprefixes:
+            matched = True
+        if env.get("STEAM_COMPAT_DATA_PATH", "") == steam_data:
+            matched = True
+        if env.get("PROTON_WRAPPER_PREFIX") == str(prefix):
+            matched = True
+        if not matched:
+            continue
+        try:
+            command = (proc / "cmdline").read_bytes().replace(b"\0", b" ").decode(errors="replace").strip()
+        except OSError:
+            command = ""
+        try:
+            name = (proc / "comm").read_text(errors="replace").strip()
+        except OSError:
+            name = ""
+        try:
+            exe = os.readlink(proc / "exe")
+        except OSError:
+            exe = ""
+        result.append({
+            "pid": str(pid),
+            "ppid": str(process_parent(pid)),
+            "exe": exe,
+            "name": name,
+            "command": command or name,
+            "age": process_start_time(pid),
+            "app_id": env.get("PROTON_WRAPPER_APP_ID", ""),
+            "app_path": env.get("PROTON_WRAPPER_APP_PATH", ""),
+            "log": env.get("PROTON_WRAPPER_LOG", ""),
+        })
+    return sorted(result, key=lambda item: int(item["pid"]))
+
+
+# Wine's own processes serve every program of the prefix, but carry the
+# app ID of whichever program started the session first.
+WINE_SESSION_PROCESSES = {
+    "wineserver", "services.exe", "winedevice.exe", "explorer.exe", "plugplay.exe",
+    "svchost.exe", "rpcss.exe", "tabtip.exe", "csrss.exe", "lsass.exe",
+}
+
+CONFIG_KEYS = (
+    "prefix", "runner", "program_args", "gamescope", "gamescope_fullscreen", "gamescope_res", "gamescope_fps",
+    "gamescope_fsr", "gamescope_args", "mangohud", "wayland", "env_vars",
+)
+
+DEFAULT_RUNNER_DIR = "WE-Proton Latest"
+
+
+def prefix_runner(prefix: Path) -> str:
+    """The proton the prefix was last set up with, as Proton records it."""
+    try:
+        line = (prefix / "config_info").read_text(errors="ignore").splitlines()[1]
+    except (OSError, IndexError):
+        return ""
+    proton = Path(line).parent.parent.parent / "proton"
+    return str(proton.resolve()) if proton.is_file() else ""
+
+
+def preferred_runner_path(runners: list[dict[str, str]]) -> str:
+    for runner in runners:
+        if runner.get("name") == DEFAULT_RUNNER_DIR:
+            return runner.get("path", "")
+    return runners[0]["path"] if runners else ""
+
+
+def prefix_netns_enabled(prefix: Path) -> bool:
+    try:
+        return "netns=1" in (prefix / ".proton-wrapper.conf").read_text(errors="ignore").splitlines()
+    except OSError:
+        return False
+
+
+def process_parent(pid: int) -> int:
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text(errors="replace")
+        return int(stat[stat.rindex(")") + 2:].split()[1])
+    except (OSError, ValueError, IndexError):
+        return 0
+
+
+def session_host_pids(procs: list[dict[str, str]]) -> set[str]:
+    """The launcher of the program that started the session: the Steam
+    runtime adopts the wineserver there, so it stays until the session ends
+    and must not be ended with that program."""
+    hosts = set()
+    for proc in procs:
+        if proc.get("name") != "wineserver":
+            continue
+        pid = process_parent(int(proc["pid"]))
+        for _ in range(64):
+            if pid <= 1:
+                break
+            hosts.add(str(pid))
+            pid = process_parent(pid)
+    return hosts
+
+
+def is_wine_process(proc: dict[str, str]) -> bool:
+    """A Windows program, run by Wine's loader."""
+    return Path(proc.get("exe", "")).name.startswith("wine") and proc.get("name") != "wineserver"
+
+
+def app_own_processes(procs: list[dict[str, str]], app_id: str, hosts: set[str]) -> list[dict[str, str]]:
+    return [
+        proc for proc in procs
+        if proc.get("app_id") == app_id and proc.get("name") not in WINE_SESSION_PROCESSES
+        and proc["pid"] not in hosts
+    ]
+
+
+def running_apps_for_prefix(prefix: Path) -> dict[str, dict[str, object]]:
+    running: dict[str, dict[str, object]] = {}
+    procs = scan_processes(prefix)
+    hosts = session_host_pids(procs)
+    for proc in procs:
+        app_id = proc.get("app_id", "")
+        if not app_id or proc.get("name") in WINE_SESSION_PROCESSES or proc["pid"] in hosts:
+            continue
+        item = running.setdefault(app_id, {"pids": [], "log": proc.get("log", ""), "path": proc.get("app_path", "")})
+        item["pids"].append(proc["pid"])
+        if proc.get("log"):
+            item["log"] = proc["log"]
+    return running
+
+
+def kill_pid(pid: int, force: bool = False) -> None:
+    os.kill(pid, signal.SIGKILL if force else signal.SIGTERM)
+
+
+def collect_cache_entries() -> list[dict[str, str]]:
+    entries = []
+    for conf in sorted(association_dir().glob("*.conf"), key=lambda item: item.stat().st_mtime, reverse=True):
+        data = read_key_values(conf)
+        exe = data.get("exe", "")
+        if not exe:
+            continue
+        if not expand_path(exe).exists():
+            conf.unlink(missing_ok=True)
+            continue
+        data["file"] = str(conf)
+        prefix = expand_path(data.get("prefix", Path.home() / ".proton"))
+        data["name"] = data.get("name") or inferred_exe_name(expand_path(exe), prefix)
+        data["source"] = data.get("source") or "configured"
+        entries.append(data)
+    return entries
+
+
+def write_cache_entry(entry: dict[str, str]) -> None:
+    path = Path(entry.get("file") or cache_file_for_path(entry.get("exe", "")))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    old_path = Path(entry.get("file", "")) if entry.get("file") else None
+    new_path = cache_file_for_path(entry.get("exe", ""))
+    if new_path != path:
+        path = new_path
+    entry["file"] = str(path)
+    keys = [
+        "name", "exe", "prefix", "runner", "program_args", "gamescope", "gamescope_fullscreen",
+        "gamescope_res", "gamescope_fps", "gamescope_fsr", "gamescope_args", "mangohud", "wayland",
+        "env_vars", "source",
+    ]
+    # a game the wrapper saw Steam start, which the manager starts through Steam
+    if entry.get("steam_appid"):
+        keys.insert(keys.index("source"), "steam_appid")
+    path.write_text(
+        "".join(f"{key}={quote(entry.get(key, '')) if key == 'env_vars' else entry.get(key, '')}\n" for key in keys),
+        encoding="utf-8",
+    )
+    if old_path and old_path != path:
+        old_path.unlink(missing_ok=True)
+
+
+RUNNER_PRODUCTS = {"ge": "GE-Proton", "dw": "DW-Proton", "we": "WE-Proton"}
+
+
+def describe_runner_updates(output: str) -> str:
+    """The lines of --check-update, product, installed, ->, latest and
+    (where) separated by tabs, as one would write them."""
+    lines = []
+    for line in output.splitlines():
+        parts = line.split("\t")
+        if len(parts) != 5:
+            if line.strip():
+                lines.append(line.strip())
+            continue
+        product, current, _arrow, latest, where = parts
+        where = where.strip("()")
+        where = TEXT["local_runners"] if where == "local" else where.capitalize()
+        lines.append(f"{RUNNER_PRODUCTS.get(product, product)} ({where}): {current} → {latest}")
+    return "\n".join(lines)
+
+
+def app_location(prefix: Path, app: dict[str, str]) -> str:
+    """Where the program is: as Windows names it when it is in the prefix."""
+    shown = windows_display_path(prefix, Path(app.get("target_exe") or app["path"]))
+    home = str(Path.home())
+    return "~" + shown[len(home):] if shown.startswith(home + "/") else shown
+
+
+class SearchRow(Gtk.ListBoxRow):
+    """A list row that the page's search matches against its texts. The key
+    names what the row is about, so that a rebuilt list finds its row again."""
+
+    def __init__(self, *texts: str, key: str = ""):
+        super().__init__()
+        self.search_text = " ".join(texts).casefold()
+        self.key = key
+
+
+def widget_descendants(widget: Gtk.Widget):
+    child = widget.get_first_child()
+    while child:
+        yield child
+        yield from widget_descendants(child)
+        child = child.get_next_sibling()
+
+
+def row_matches(row: Gtk.ListBoxRow, query: str) -> bool:
+    text = getattr(row, "search_text", None)
+    return text is None or all(term in text for term in query.casefold().split())
+
+
+def set_image_icon(image: Gtk.Image, icon: str) -> None:
+    if icon and os.path.isabs(icon):
+        image.set_from_file(icon)
+    else:
+        image.set_from_icon_name(icon or "proton-wrapper")
+
+
+class IconLoader:
+    """Finds app icons on a worker thread: extracting one from an exe takes
+    a while, and the list must not wait for it."""
+
+    def __init__(self):
+        self.known: dict[tuple, str] = {}
+        self.waiting: dict[tuple, list[Gtk.Image]] = {}
+        self.jobs: queue.Queue = queue.Queue()
+        threading.Thread(target=self.work, daemon=True).start()
+
+    def show(self, image: Gtk.Image, prefix: Path, app: dict[str, str]) -> None:
+        key = (str(prefix), app["path"], app.get("target_exe", ""), app.get("missing", ""))
+        icon = self.known.get(key)
+        # the icon cache folder may have been emptied meanwhile
+        if icon and (not os.path.isabs(icon) or os.path.isfile(icon)):
+            set_image_icon(image, icon)
+            return
+        if key in self.waiting:
+            self.waiting[key].append(image)
+            return
+        self.waiting[key] = [image]
+        self.jobs.put((key, prefix, dict(app)))
+
+    def work(self) -> None:
+        while True:
+            key, prefix, app = self.jobs.get()
+            try:
+                icon = icon_for_app(prefix, app)
+            except Exception:
+                icon = "proton-wrapper"
+            GLib.idle_add(self.found, key, icon)
+
+    def found(self, key: tuple, icon: str) -> bool:
+        self.known[key] = icon
+        for image in self.waiting.pop(key, []):
+            set_image_icon(image, icon)
+        return False
+
+
+class ManagerApp(Gtk.Application):
+    def __init__(self):
+        super().__init__(application_id="io.github.protonwrapper.proton_wrapper_manager")
+        self.wrapper = resolve_sibling("proton-wrapper")
+        self.configure = resolve_sibling("proton-wrapper-configure")
+        self.window = None
+        self.prefixes: list[Path] = []
+        self.apps_prefix_combo = None
+        self.install_dirs_prefix_combo = None
+        self.process_prefix_combo = None
+        self.process_prefix_display_paths: dict[str, Path] = {}
+        self.process_path_label = None
+        self.prefix_entry = None
+        self.stack = None
+        self.nav_buttons = {}
+        self.apps_list = None
+        self.install_dirs_list = None
+        self.process_list = None
+        self.apps_signature = None
+        self.install_dirs_signature = None
+        self.status_label = None
+        self.status_clear_source_id = 0
+        self.refresh_source_id = 0
+        self.refresh_tick = 0
+        self.popover_open = False
+        self.update_button = None
+        self.update_check_source_id = 0
+        self.update_running = False
+        self.netns_switch = None
+        self.syncing_netns = False
+        self.search_entries: dict[str, Gtk.SearchEntry] = {}
+        self.icon_loader = IconLoader()
+
+    def do_activate(self):
+        sync_color_scheme()
+        install_css()
+        self.window = Gtk.ApplicationWindow(application=self, title=TEXT["title"])
+        self.window.set_default_size(1050, 700)
+
+        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        outer.append(self.build_header())
+        outer.append(self.build_stack())
+
+        self.status_label = Gtk.Label(label="", xalign=0)
+        self.status_label.add_css_class("dim-label")
+        self.status_label.set_margin_top(8)
+        self.status_label.set_margin_bottom(8)
+        self.status_label.set_margin_start(14)
+        self.status_label.set_margin_end(14)
+        outer.append(self.status_label)
+
+        self.window.set_child(outer)
+        shortcuts = Gtk.ShortcutController()
+        shortcuts.add_shortcut(Gtk.Shortcut.new(Gtk.ShortcutTrigger.parse_string("<Control>f"),
+                                                Gtk.CallbackAction.new(self.focus_search)))
+        shortcuts.add_shortcut(Gtk.Shortcut.new(Gtk.ShortcutTrigger.parse_string("Escape"),
+                                                Gtk.CallbackAction.new(self.clear_search)))
+        self.window.add_controller(shortcuts)
+        self.window.present()
+        self.reload_prefixes()
+        self.refresh_all()
+        self.refresh_source_id = GLib.timeout_add_seconds(3, self.auto_refresh)
+        self.check_for_updates()
+        self.update_check_source_id = GLib.timeout_add_seconds(600, self.check_for_updates)
+
+    def do_shutdown(self):
+        if self.refresh_source_id:
+            GLib.source_remove(self.refresh_source_id)
+            self.refresh_source_id = 0
+        if self.status_clear_source_id:
+            GLib.source_remove(self.status_clear_source_id)
+            self.status_clear_source_id = 0
+        if self.update_check_source_id:
+            GLib.source_remove(self.update_check_source_id)
+            self.update_check_source_id = 0
+        Gtk.Application.do_shutdown(self)
+
+    def build_header(self) -> Gtk.Box:
+        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        box.add_css_class("top-nav")
+        box.set_halign(Gtk.Align.CENTER)
+        for name, label in (("apps", TEXT["apps"]), ("install_dirs", TEXT["install_dirs"]), ("processes", TEXT["processes"])):
+            button = Gtk.Button(label=label)
+            button.add_css_class("nav-button")
+            button.connect("clicked", lambda _b, page=name: self.set_page(page))
+            self.nav_buttons[name] = button
+            box.append(button)
+        return box
+
+    def set_page(self, name: str) -> None:
+        if self.stack:
+            self.stack.set_visible_child_name(name)
+        for page, button in self.nav_buttons.items():
+            if page == name:
+                button.add_css_class("nav-button-active")
+            else:
+                button.remove_css_class("nav-button-active")
+        # typing anywhere in the window searches the page shown
+        for page, entry in self.search_entries.items():
+            entry.set_key_capture_widget(self.window if page == name else None)
+        self.refresh_all()
+
+    def focus_search(self, *_args) -> bool:
+        entry = self.search_entries.get(self.stack.get_visible_child_name() if self.stack else "apps")
+        if entry:
+            entry.grab_focus()
+        return True
+
+    def clear_search(self, *_args) -> bool:
+        """Escape ends a search that typing in the window started, where the
+        entry does not have the focus."""
+        entry = self.search_entries.get(self.stack.get_visible_child_name() if self.stack else "apps")
+        if not entry or not entry.get_text():
+            return False
+        entry.set_text("")
+        return True
+
+    def search_entry(self, page: str, list_box: Gtk.ListBox, hint: str) -> Gtk.SearchEntry:
+        entry = Gtk.SearchEntry(hexpand=True)
+        entry.set_placeholder_text(hint)
+        entry.connect("search-changed", lambda _entry: list_box.invalidate_filter())
+        entry.connect("stop-search", lambda field: field.set_text(""))
+        list_box.set_filter_func(lambda row: row_matches(row, entry.get_text()))
+        # shown while the search hides every row
+        no_match = Gtk.Label(label=TEXT["no_matches"])
+        no_match.add_css_class("dim-label")
+        no_match.set_margin_top(18)
+        no_match.set_margin_bottom(18)
+        list_box.set_placeholder(no_match)
+        self.search_entries[page] = entry
+        return entry
+
+    def build_stack(self) -> Gtk.Stack:
+        self.stack = Gtk.Stack(hexpand=True, vexpand=True)
+        self.stack.add_named(self.apps_page(), "apps")
+        self.stack.add_named(self.install_dirs_page(), "install_dirs")
+        self.stack.add_named(self.process_page(), "processes")
+        self.set_page("apps")
+        return self.stack
+
+    def make_page(self, name: str, title: str, description: str, search_hint: str) -> tuple[Gtk.Box, Gtk.Box, Gtk.ListBox]:
+        page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        page.set_margin_top(16)
+        page.set_margin_bottom(16)
+        page.set_margin_start(16)
+        page.set_margin_end(16)
+        header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        if title or description:
+            header.append(section(title, description))
+            spacer = Gtk.Box(hexpand=True)
+            header.append(spacer)
+        actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        actions.set_valign(Gtk.Align.START)
+        header.append(actions)
+        page.append(header)
+        list_box = Gtk.ListBox()
+        list_box.set_selection_mode(Gtk.SelectionMode.NONE)
+        page.append(self.search_entry(name, list_box, search_hint))
+        scroll = Gtk.ScrolledWindow(hexpand=True, vexpand=True)
+        scroll.set_child(list_box)
+        page.append(scroll)
+        return page, actions, list_box
+
+    def apps_page(self) -> Gtk.Widget:
+        page, actions, self.apps_list = self.make_page("apps", "", "", TEXT["search_apps"])
+        page.insert_child_after(self.prefix_selector("apps"), page.get_first_child())
+        overlay = Gtk.Overlay()
+        overlay.set_child(page)
+        create = Gtk.Button(label="")
+        create.add_css_class("compact-button")
+        create.add_css_class("icon-button")
+        create.set_size_request(34, 34)
+        create.set_halign(Gtk.Align.END)
+        create.set_valign(Gtk.Align.END)
+        create.set_margin_end(18)
+        create.set_margin_bottom(18)
+        create.set_tooltip_text(TEXT["add_config"])
+        create.connect("clicked", self.on_create_config)
+        overlay.add_overlay(create)
+        return overlay
+
+    def process_page(self) -> Gtk.Widget:
+        page, actions, self.process_list = self.make_page("processes", TEXT["processes"], TEXT["processes_desc"], TEXT["search_processes"])
+        page.insert_child_after(self.prefix_selector("processes"), page.get_first_child())
+        refresh = Gtk.Button(label=TEXT["refresh"])
+        refresh.add_css_class("compact-button")
+        refresh.connect("clicked", lambda _b: self.refresh_process_page())
+        actions.append(refresh)
+        kill_all = Gtk.Button(label=TEXT["kill_all"])
+        kill_all.add_css_class("destructive-action")
+        kill_all.connect("clicked", self.on_kill_all_processes)
+        actions.append(kill_all)
+        return page
+
+    def install_dirs_page(self) -> Gtk.Widget:
+        page, actions, self.install_dirs_list = self.make_page("install_dirs", TEXT["install_dirs"], TEXT["install_dirs_desc"], TEXT["search_dirs"])
+        page.insert_child_after(self.prefix_selector("install_dirs"), page.get_first_child())
+        refresh = Gtk.Button(label=TEXT["refresh"])
+        refresh.add_css_class("compact-button")
+        refresh.connect("clicked", lambda _b: self.refresh_install_dirs(force=True))
+        actions.append(refresh)
+        return page
+
+    def prefix_selector(self, page: str) -> Gtk.Widget:
+        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        box.add_css_class("prefix-toolbar")
+        label = Gtk.Label(label=TEXT["prefix"], xalign=0)
+        label.add_css_class("prefix-label")
+        combo = Gtk.ComboBoxText()
+        combo.set_hexpand(True)
+        # a long prefix path must not keep the window from getting narrower
+        for cell in combo.get_cells():
+            cell.set_property("ellipsize", Pango.EllipsizeMode.MIDDLE)
+        combo.connect("changed", self.on_prefix_combo_changed)
+        browse = Gtk.Button(label=TEXT["browse"])
+        browse.connect("clicked", lambda _b, selector=combo: self.browse_prefix(selector))
+        open_prefix = Gtk.Button(label="")
+        open_prefix.add_css_class("compact-button")
+        open_prefix.add_css_class("icon-button")
+        open_prefix.set_size_request(34, 34)
+        open_prefix.set_valign(Gtk.Align.CENTER)
+        open_prefix.set_tooltip_text(TEXT["open_prefix"])
+        open_prefix.connect("clicked", lambda _b, selector_page=page: self.open_folder(self.page_prefix(selector_page)))
+        delete_prefix = Gtk.Button(label="")
+        delete_prefix.add_css_class("compact-button")
+        delete_prefix.add_css_class("icon-button")
+        delete_prefix.add_css_class("destructive-action")
+        delete_prefix.set_size_request(34, 34)
+        delete_prefix.set_valign(Gtk.Align.CENTER)
+        delete_prefix.set_tooltip_text(TEXT["delete_prefix"])
+        delete_prefix.connect("clicked", lambda _b, selector_page=page: self.confirm_delete_prefix(self.page_prefix(selector_page)))
+        box.append(label)
+        box.append(combo)
+        box.append(browse)
+        box.append(open_prefix)
+        box.append(delete_prefix)
+        if page == "apps":
+            self.update_button = self.create_update_button()
+            box.append(self.update_button)
+            box.append(self.netns_toggle())
+            box.append(self.cache_dirs_menu_button())
+        path_label = None
+        if page == "processes":
+            path_label = Gtk.Label(xalign=0)
+            path_label.add_css_class("prefix-path-label")
+            path_label.set_margin_start(0)
+        outer.append(box)
+        if path_label:
+            outer.append(path_label)
+        if page == "apps":
+            self.apps_prefix_combo = combo
+        elif page == "install_dirs":
+            self.install_dirs_prefix_combo = combo
+        else:
+            self.process_prefix_combo = combo
+            self.process_path_label = path_label
+        self.update_prefix_path_label(combo, page)
+        return outer
+
+    def update_prefix_path_label(self, combo: Gtk.ComboBoxText, page: str) -> None:
+        if page != "processes" or not getattr(self, "process_path_label", None):
+            return
+        text = combo.get_active_text() or ""
+        prefix = self.process_prefix_display_paths.get(text)
+        if prefix and text != str(prefix):
+            self.process_path_label.set_text(str(prefix))
+            self.process_path_label.set_visible(True)
+        else:
+            self.process_path_label.set_text("")
+            self.process_path_label.set_visible(False)
+
+    def on_prefix_combo_changed(self, combo: Gtk.ComboBoxText) -> None:
+        visible = self.stack.get_visible_child_name() if self.stack else "apps"
+        self.update_prefix_path_label(combo, "processes" if visible == "processes" else visible)
+        self.refresh_all()
+
+    def current_prefix(self) -> Path:
+        combo = self.current_prefix_combo()
+        text = combo.get_active_text() if combo else ""
+        visible = self.stack.get_visible_child_name() if self.stack else "apps"
+        if visible == "processes" and text in self.process_prefix_display_paths:
+            return self.process_prefix_display_paths[text]
+        return expand_path(text or Path.home() / ".proton")
+
+    def page_prefix(self, page: str) -> Path:
+        if page == "processes":
+            combo = self.process_prefix_combo
+        elif page == "install_dirs":
+            combo = self.install_dirs_prefix_combo
+        else:
+            combo = self.apps_prefix_combo
+        text = combo.get_active_text() if combo else ""
+        if page == "processes" and text in self.process_prefix_display_paths:
+            return self.process_prefix_display_paths[text]
+        return expand_path(text or Path.home() / ".proton")
+
+    def current_prefix_combo(self) -> Gtk.ComboBoxText | None:
+        visible = self.stack.get_visible_child_name() if self.stack else "apps"
+        if visible == "processes":
+            return self.process_prefix_combo
+        if visible == "install_dirs":
+            return self.install_dirs_prefix_combo
+        return self.apps_prefix_combo
+
+    def reload_prefixes(self) -> None:
+        self.prefixes = collect_prefixes()
+        process_prefixes = collect_process_prefixes()
+        process_labels = unique_process_prefix_labels(process_prefixes)
+        old_process_display_paths = self.process_prefix_display_paths
+        self.process_prefix_display_paths = {label: prefix for label, prefix in process_labels}
+        for combo, entries in (
+            (self.apps_prefix_combo, [(str(prefix), prefix) for prefix in self.prefixes]),
+            (self.install_dirs_prefix_combo, [(str(prefix), prefix) for prefix in self.prefixes]),
+            (self.process_prefix_combo, process_labels),
+        ):
+            if not combo:
+                continue
+            current = combo.get_active_text()
+            current_prefix = old_process_display_paths.get(current) if combo == self.process_prefix_combo else None
+            combo.remove_all()
+            active_index = 0
+            for index, (label, prefix) in enumerate(entries):
+                combo.append_text(label)
+                if label == current or (current_prefix and prefix == current_prefix):
+                    active_index = index
+            combo.set_active(active_index)
+            if combo == self.process_prefix_combo:
+                self.update_prefix_path_label(combo, "processes")
+
+    def refresh_all(self) -> None:
+        if self.popover_open:
+            return
+        visible = self.stack.get_visible_child_name() if self.stack else "apps"
+        if visible == "processes":
+            self.refresh_processes()
+        elif visible == "install_dirs":
+            self.refresh_install_dirs()
+        else:
+            self.refresh_apps()
+
+    def refresh_process_page(self) -> None:
+        self.reload_prefixes()
+        self.refresh_processes()
+
+    def auto_refresh(self) -> bool:
+        if self.popover_open:
+            return True
+        self.refresh_tick += 1
+        visible = self.stack.get_visible_child_name() if self.stack else ""
+        if visible == "processes":
+            if self.refresh_tick % 2 == 0:
+                self.reload_prefixes()
+            self.refresh_processes()
+        elif visible == "install_dirs":
+            if self.refresh_tick % 4 == 0:
+                self.refresh_install_dirs()
+        elif visible == "apps":
+            if self.refresh_tick % 3 == 0:
+                self.refresh_apps()
+        return True
+
+    def save_list_view(self, list_box: Gtk.ListBox) -> dict:
+        """Where a list is scrolled to and which row and button have the focus,
+        for restore_list_view() after the rows are rebuilt."""
+        scrolled = list_box.get_ancestor(Gtk.ScrolledWindow)
+        adjustment = scrolled.get_vadjustment() if scrolled else None
+        view = {"adjustment": adjustment, "value": adjustment.get_value() if adjustment else 0.0,
+                "key": "", "index": -1, "label": None}
+        focus = self.window.get_focus() if self.window else None
+        if focus and focus.is_ancestor(list_box):
+            row = focus if isinstance(focus, Gtk.ListBoxRow) else focus.get_ancestor(Gtk.ListBoxRow)
+            if row:
+                view["key"] = getattr(row, "key", "")
+                view["index"] = row.get_index()
+            if isinstance(focus, Gtk.Button):
+                view["label"] = focus.get_label()
+            # once the focused row is gone GTK focuses the first row, and the
+            # list scrolls up to it
+            self.window.set_focus(None)
+        return view
+
+    def restore_list_view(self, list_box: Gtk.ListBox, view: dict) -> None:
+        adjustment = view["adjustment"]
+        if not adjustment:
+            return
+        state = {"done": False, "handler": 0}
+
+        def apply(*_args) -> bool:
+            # the rebuilt rows get their size on the next frame, until then the
+            # list can't be scrolled back
+            if state["done"]:
+                return False
+            state["done"] = True
+            adjustment.disconnect(state["handler"])
+            upper = adjustment.get_upper() - adjustment.get_page_size()
+            adjustment.set_value(max(0.0, min(view["value"], upper)))
+            # the focus goes back only to a row that stayed where it was;
+            # following a row that moved would scroll the list
+            row = list_box.get_row_at_index(view["index"]) if view["key"] else None
+            if row and getattr(row, "key", "") == view["key"]:
+                target = row
+                if view["label"]:
+                    target = next((button for button in widget_descendants(row)
+                                   if isinstance(button, Gtk.Button) and button.get_label() == view["label"]), row)
+                # the row is in view already; scrolling to the focus would go by
+                # the new rows' positions before they are final
+                viewport = list_box.get_ancestor(Gtk.Viewport)
+                if viewport:
+                    viewport.set_scroll_to_focus(False)
+                target.grab_focus()
+                if viewport:
+                    GLib.idle_add(lambda: (viewport.set_scroll_to_focus(True), False)[1])
+            return False
+
+        state["handler"] = adjustment.connect("changed", apply)
+        GLib.timeout_add(100, apply)
+
+    def clear_list(self, list_box: Gtk.ListBox) -> None:
+        child = list_box.get_first_child()
+        while child:
+            next_child = child.get_next_sibling()
+            # the search's placeholder stays
+            if isinstance(child, Gtk.ListBoxRow):
+                list_box.remove(child)
+            child = next_child
+
+    def row_box(self) -> Gtk.Box:
+        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        box.add_css_class("row-card")
+        box.set_margin_top(2)
+        box.set_margin_bottom(2)
+        box.set_valign(Gtk.Align.CENTER)
+        return box
+
+    def text_column(self, title: str, detail: str, tooltip: str | None = None, dim: bool = False) -> Gtk.Box:
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
+        box.set_hexpand(True)
+        title_label = Gtk.Label(label=title, xalign=0, wrap=True)
+        title_label.add_css_class("heading")
+        if dim:
+            title_label.add_css_class("dim-label")
+        # one line: a long path is shortened in the middle, the tooltip has it all
+        detail_label = Gtk.Label(label=detail, xalign=0)
+        detail_label.set_single_line_mode(True)
+        detail_label.set_ellipsize(Pango.EllipsizeMode.MIDDLE)
+        detail_label.set_tooltip_text(tooltip or detail)
+        detail_label.add_css_class("dim-label")
+        detail_label.set_selectable(True)
+        box.append(title_label)
+        box.append(detail_label)
+        return box
+
+    def icon_widget(self, icon: str) -> Gtk.Image:
+        if icon and Path(icon).is_file():
+            image = Gtk.Image.new_from_file(icon)
+        else:
+            image = Gtk.Image.new_from_icon_name(icon or "proton-wrapper")
+        image.set_pixel_size(36)
+        image.add_css_class("app-icon")
+        return image
+
+    def app_icon_widget(self, prefix: Path, app: dict[str, str]) -> Gtk.Image:
+        """Empty until the icon loader has found the app's icon."""
+        image = Gtk.Image()
+        image.set_pixel_size(36)
+        image.set_size_request(36, 36)
+        image.add_css_class("app-icon")
+        self.icon_loader.show(image, prefix, app)
+        return image
+
+    def compact_button(self, label: str, css_class: str | None = None) -> Gtk.Button:
+        button = Gtk.Button(label=label)
+        button.add_css_class("compact-button")
+        if css_class:
+            button.add_css_class(css_class)
+        return button
+
+    def combo_entry(self, values: list[str], current: str) -> Gtk.ComboBoxText:
+        combo = Gtk.ComboBoxText.new_with_entry()
+        seen = set()
+        for value in values + ([current] if current else []):
+            if not value or value in seen:
+                continue
+            seen.add(value)
+            combo.append_text(value)
+        child = combo.get_child()
+        if isinstance(child, Gtk.Entry):
+            child.set_text(current)
+            child.set_hexpand(True)
+        combo.set_hexpand(True)
+        return combo
+
+    def combo_entry_text(self, combo: Gtk.ComboBoxText) -> str:
+        child = combo.get_child()
+        if isinstance(child, Gtk.Entry):
+            return child.get_text().strip()
+        return combo.get_active_text() or ""
+
+    def browse_entry_folder(self, entry: Gtk.Entry) -> None:
+        dialog = Gtk.FileChooserNative(
+            title=TEXT["prefix"],
+            transient_for=self.window,
+            action=Gtk.FileChooserAction.SELECT_FOLDER,
+            accept_label=TEXT["browse"],
+            cancel_label=TEXT["cancel"],
+        )
+        dialog.connect("response", lambda d, response, field=entry: self.on_entry_folder_response(d, response, field))
+        dialog.show()
+
+    def browse_entry_file(self, entry: Gtk.Entry) -> None:
+        dialog = Gtk.FileChooserNative(
+            title=TEXT["exe"],
+            transient_for=self.window,
+            action=Gtk.FileChooserAction.OPEN,
+            accept_label=TEXT["browse"],
+            cancel_label=TEXT["cancel"],
+        )
+        dialog.connect("response", lambda d, response, field=entry: self.on_entry_file_response(d, response, field))
+        dialog.show()
+
+    def on_entry_file_response(self, dialog, response, entry: Gtk.Entry) -> None:
+        if response == Gtk.ResponseType.ACCEPT:
+            file = dialog.get_file()
+            if file and file.get_path():
+                entry.set_text(file.get_path())
+        dialog.destroy()
+
+    def on_entry_folder_response(self, dialog, response, entry: Gtk.Entry) -> None:
+        if response == Gtk.ResponseType.ACCEPT:
+            file = dialog.get_file()
+            if file and file.get_path():
+                entry.set_text(file.get_path())
+        dialog.destroy()
+
+    def runner_combo(self, runners: list[dict[str, str]], current: str) -> Gtk.ComboBoxText:
+        combo = Gtk.ComboBoxText()
+        active_id = None
+        for index, runner in enumerate(runners):
+            combo.append(str(index), runner_label(runner))
+            if runner.get("path") == current:
+                active_id = str(index)
+        if current and active_id is None:
+            combo.append("current", f"{Path(current).parent.name or Path(current).name} · custom")
+            active_id = "current"
+        combo.set_active_id(active_id or ("0" if runners else None))
+        combo.set_hexpand(True)
+        combo.runner_paths = {str(index): runner.get("path", "") for index, runner in enumerate(runners)}
+        combo.runner_paths["current"] = current
+        return combo
+
+    def runner_combo_path(self, combo: Gtk.ComboBoxText) -> str:
+        active_id = combo.get_active_id()
+        return getattr(combo, "runner_paths", {}).get(active_id, "") if active_id is not None else ""
+
+    def compact_menu_button(self, menu: Gtk.Popover) -> Gtk.MenuButton:
+        icon = Gtk.Image.new_from_icon_name("open-menu-symbolic")
+        icon.set_pixel_size(16)
+        button = Gtk.MenuButton()
+        button.set_child(icon)
+        button.add_css_class("menu-button")
+        button.set_popover(menu)
+        menu.connect("show", lambda _popover: setattr(self, "popover_open", True))
+        menu.connect("closed", lambda _popover: setattr(self, "popover_open", False))
+        return button
+
+    def app_menu_button(self, app: dict[str, str]) -> Gtk.MenuButton:
+        menu = Gtk.Popover()
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        box.set_margin_top(8)
+        box.set_margin_bottom(8)
+        box.set_margin_start(8)
+        box.set_margin_end(8)
+        rename = self.compact_button(TEXT["rename"])
+        rename.connect("clicked", lambda _b, item=app, popover=menu: (popover.popdown(), self.prompt_rename_app(item)))
+        export = self.compact_button(TEXT["export"])
+        export.connect("clicked", lambda _b, item=app, popover=menu: (popover.popdown(), self.export_one_app(item)))
+        open_dir = self.compact_button(TEXT["open_dir"])
+        open_dir.connect("clicked", lambda _b, item=app, popover=menu: (popover.popdown(), self.open_folder(Path(item["path"]).parent)))
+        delete = self.compact_button(TEXT["delete"], "menu-item-danger")
+        delete.connect("clicked", lambda _b, item=app, popover=menu: (popover.popdown(), self.delete_library_item(item)))
+        box.append(rename)
+        box.append(export)
+        box.append(open_dir)
+        box.append(delete)
+        menu.set_child(box)
+        return self.compact_menu_button(menu)
+
+    def netns_toggle(self) -> Gtk.Widget:
+        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        box.set_valign(Gtk.Align.CENTER)
+        label = Gtk.Label(label=TEXT["netns"])
+        label.add_css_class("prefix-label")
+        switch = Gtk.Switch()
+        switch.set_valign(Gtk.Align.CENTER)
+        has_pasta = shutil_which("pasta") is not None
+        switch.set_sensitive(has_pasta)
+        box.set_tooltip_text(TEXT["netns_desc"] if has_pasta else TEXT["netns_missing"])
+        switch.connect("state-set", self.on_netns_state_set)
+        self.netns_switch = switch
+        box.append(label)
+        box.append(switch)
+        return box
+
+    def on_netns_state_set(self, _switch: Gtk.Switch, state: bool) -> bool:
+        if self.syncing_netns:
+            return False
+        prefix = self.page_prefix("apps")
+        result = subprocess.run([self.wrapper, "-p", str(prefix), "--netns", "on" if state else "off"],
+                                check=False, text=True, capture_output=True)
+        if result.returncode != 0:
+            display_message(self.window, TEXT["error"], (result.stderr or result.stdout).strip())
+            return True  # keep the switch where it was
+        self.set_status(f'{TEXT["netns"]}: {prefix}')
+        return False
+
+    def sync_netns_switch(self, prefix: Path) -> None:
+        if not self.netns_switch:
+            return
+        enabled = prefix_netns_enabled(prefix)
+        if self.netns_switch.get_active() != enabled:
+            self.syncing_netns = True
+            self.netns_switch.set_active(enabled)
+            self.syncing_netns = False
+
+    def create_update_button(self) -> Gtk.Button:
+        button = Gtk.Button(label=TEXT["update_available"])
+        button.add_css_class("compact-button")
+        button.add_css_class("update-button")
+        button.set_valign(Gtk.Align.CENTER)
+        button.set_visible(False)
+        button.set_tooltip_text(TEXT["update_available"])
+        button.connect("clicked", lambda _b: self.on_update_clicked())
+        return button
+
+    def check_for_updates(self) -> bool:
+        if self.update_running:
+            return True
+        def worker():
+            try:
+                result = subprocess.run(
+                    [str(self.wrapper), "--check-update"],
+                    capture_output=True, text=True, timeout=60,
+                )
+                output = result.stdout.strip() if result.returncode == 0 else ""
+            except Exception:
+                output = ""
+            GLib.idle_add(self._on_update_check_done, output)
+        threading.Thread(target=worker, daemon=True).start()
+        return True
+
+    def _on_update_check_done(self, output: str) -> bool:
+        if not self.update_button or self.update_running:
+            return False
+        if output:
+            self.update_button.set_visible(True)
+            self.update_button.set_tooltip_text(describe_runner_updates(output))
+        else:
+            self.update_button.set_visible(False)
+        return False
+
+    def on_update_clicked(self) -> None:
+        if self.update_running or not self.update_button:
+            return
+        tooltip = self.update_button.get_tooltip_text() or ""
+        dialog = Gtk.MessageDialog(
+            transient_for=self.window,
+            modal=True,
+            message_type=Gtk.MessageType.QUESTION,
+            buttons=Gtk.ButtonsType.OK_CANCEL,
+            text=TEXT["update_confirm_title"],
+            secondary_text=TEXT["update_confirm_msg"] + "\n\n" + tooltip,
+        )
+        dialog.connect("response", lambda _d, response: self._on_update_dialog_response(_d, response))
+        dialog.present()
+
+    def _on_update_dialog_response(self, dialog: Gtk.MessageDialog, response: int) -> None:
+        dialog.destroy()
+        if response != Gtk.ResponseType.OK:
+            return
+        self.update_running = True
+        self.update_button.set_label(TEXT["updating"])
+        self.update_button.set_sensitive(False)
+        self.set_status(TEXT["updating"])
+
+        def worker():
+            try:
+                # no time limit: the wrapper stops a download only once it stalls
+                result = subprocess.run([str(self.wrapper), "--update"], capture_output=True, text=True)
+                success = result.returncode == 0
+            except Exception:
+                success = False
+            GLib.idle_add(self._on_update_complete, success)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_update_complete(self, success: bool) -> bool:
+        self.update_running = False
+        self.update_button.set_sensitive(True)
+        self.update_button.set_label(TEXT["update_available"])
+        if success:
+            self.set_status(TEXT["update_done"])
+        else:
+            self.set_status(TEXT["update_failed"])
+        self.check_for_updates()
+        return False
+
+    def cache_dirs_menu_button(self) -> Gtk.Button:
+        menu = Gtk.Popover()
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        box.set_margin_top(8)
+        box.set_margin_bottom(8)
+        box.set_margin_start(8)
+        box.set_margin_end(8)
+
+        assoc = self.compact_button(TEXT["open_assoc_dir"])
+        assoc.connect("clicked", lambda _b, popover=menu: (popover.popdown(), self.open_folder(association_dir())))
+        icons = self.compact_button(TEXT["open_icon_dir"])
+        icons.connect("clicked", lambda _b, popover=menu: (popover.popdown(), self.open_folder(exported_icon_dir())))
+        shortcuts = self.compact_button(TEXT["open_shortcut_dir"])
+        shortcuts.connect("clicked", lambda _b, popover=menu: (popover.popdown(), self.open_folder(exported_app_dir())))
+
+        box.append(assoc)
+        box.append(icons)
+        box.append(shortcuts)
+        menu.set_child(box)
+
+        button = Gtk.Button(label=TEXT["cache_dirs"] + "⌄")
+        button.add_css_class("compact-button")
+        menu.set_parent(button)
+        button.connect("clicked", lambda _b, popover=menu: popover.popup())
+        menu.connect("show", lambda _popover: setattr(self, "popover_open", True))
+        menu.connect("closed", lambda _popover: setattr(self, "popover_open", False))
+        return button
+
+    def cache_menu_button(self, entry: dict[str, str]) -> Gtk.MenuButton:
+        menu = Gtk.Popover()
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        box.set_margin_top(8)
+        box.set_margin_bottom(8)
+        box.set_margin_start(8)
+        box.set_margin_end(8)
+        run = self.compact_button(TEXT["run"])
+        run.connect("clicked", lambda _b, item=entry, popover=menu: (popover.popdown(), self.run_path(item.get("exe", ""), item.get("prefix", ""), item.get("runner", ""))))
+        open_dir = self.compact_button(TEXT["open_dir"])
+        open_dir.connect("clicked", lambda _b, item=entry, popover=menu: (popover.popdown(), self.open_folder(Path(item.get("exe", "")).parent)))
+        delete = self.compact_button(TEXT["delete"], "menu-item-danger")
+        delete.connect("clicked", lambda _b, item=entry, popover=menu: (popover.popdown(), self.delete_cache(item.get("file", ""))))
+        box.append(run)
+        box.append(open_dir)
+        box.append(delete)
+        menu.set_child(box)
+        return self.compact_menu_button(menu)
+
+    def empty_row(self, message: str) -> Gtk.ListBoxRow:
+        row = Gtk.ListBoxRow()
+        label = Gtk.Label(label=message, xalign=0)
+        label.set_margin_top(18)
+        label.set_margin_bottom(18)
+        label.set_margin_start(12)
+        label.set_margin_end(12)
+        label.add_css_class("dim-label")
+        row.set_child(label)
+        return row
+
+    def apps_state_signature(self, prefix: Path, apps: list[dict[str, str]], running: dict[str, dict[str, object]]) -> tuple:
+        items = []
+        for app in apps:
+            app_id = app_identity(prefix, Path(app["path"]))
+            running_app = running.get(app_id)
+            log_path = Path(str(running_app.get("log", ""))) if running_app and running_app.get("log") else latest_log_for_app(app_id)
+            items.append((
+                app_id,
+                app_display_name(app),
+                app.get("path", ""),
+                app.get("target_exe", ""),
+                app.get("missing", ""),
+                app.get("runner", ""),
+                app.get("kind", ""),
+                bool(running_app),
+                str(log_path or ""),
+            ))
+        return (str(prefix), tuple(items))
+
+    def install_dirs_state_signature(self, prefix: Path, dirs: list[dict[str, object]]) -> tuple:
+        items = []
+        for item in dirs:
+            items.append((
+                str(item.get("path", "")),
+                item.get("exe_count", 0),
+                item.get("linked_count", 0),
+                int(float(item.get("mtime", 0))),
+            ))
+        return (str(prefix), tuple(items))
+
+    def refresh_apps(self, force: bool = False) -> None:
+        prefix = self.page_prefix("apps")
+        self.sync_netns_switch(prefix)
+        apps = scan_apps(prefix)
+        running = running_apps_for_prefix(prefix)
+        signature = self.apps_state_signature(prefix, apps, running)
+        if not force and signature == self.apps_signature:
+            return
+        self.apps_signature = signature
+        view = self.save_list_view(self.apps_list)
+        self.clear_list(self.apps_list)
+        self.fill_apps(prefix, apps, running)
+        self.restore_list_view(self.apps_list, view)
+
+    def fill_apps(self, prefix: Path, apps: list[dict[str, str]], running: dict[str, dict[str, object]]) -> None:
+        if not apps:
+            self.apps_list.append(self.empty_row(TEXT["no_apps"]))
+            return
+        for app in apps:
+            app_id = app_identity(prefix, Path(app["path"]))
+            running_app = running.get(app_id)
+            log_path = Path(str(running_app.get("log", ""))) if running_app and running_app.get("log") else latest_log_for_app(app_id)
+            location = app_location(prefix, app)
+            missing = app.get("missing") == "1"
+            steam_appid = app.get("steam_appid", "")
+            detail = f'{TEXT["target_missing"]} · {location}' if missing else location
+            if steam_appid:
+                detail = f"Steam · {detail}"
+            row = SearchRow(app_display_name(app), app.get("name", ""), detail, app["path"], key=app_id)
+            box = self.row_box()
+            box.append(self.app_icon_widget(prefix, app))
+            box.append(self.text_column(app_display_name(app), detail,
+                                        tooltip=app["path"], dim=missing or app_is_uninstaller(app)))
+            log_button = self.compact_button(TEXT["log"])
+            log_button.set_sensitive(bool(log_path and log_path.exists()))
+            log_button.connect("clicked", lambda _b, item=app, path=log_path: self.show_log_dialog(app_display_name(item), path))
+            box.append(log_button)
+            if running_app:
+                close = self.compact_button(TEXT["close"], "menu-item-danger")
+                close.connect("clicked", lambda _b, app_id_value=app_id: self.close_running_app(app_id_value))
+                box.append(close)
+            else:
+                run = self.compact_button(TEXT["run"], "run-button")
+                if steam_appid:
+                    # Steam signs the game in and passes its launch options,
+                    # which bring it back to the wrapper
+                    run.set_tooltip_text(TEXT["run_via_steam"])
+                    run.connect("clicked", lambda _b, appid=steam_appid, item=app, item_prefix=prefix:
+                                self.run_steam_game(appid, item["path"], str(item_prefix)))
+                else:
+                    run.connect("clicked", lambda _b, item=app, item_prefix=prefix: self.run_path(item["path"], str(item_prefix), item.get("runner", "")))
+                box.append(run)
+            if app.get("kind") in ("saved-config", "shortcut"):
+                config = self.compact_button(TEXT["reconfigure"])
+                config.connect("clicked", lambda _b, item=app: self.edit_cache_entry(item))
+                box.append(config)
+            box.append(self.app_menu_button(app))
+            row.set_child(box)
+            self.apps_list.append(row)
+
+    def refresh_install_dirs(self, force: bool = False) -> None:
+        if not self.install_dirs_list:
+            return
+        prefix = self.page_prefix("install_dirs")
+        apps = scan_apps(prefix)
+        dirs = scan_install_dirs(prefix, apps)
+        signature = self.install_dirs_state_signature(prefix, dirs)
+        if not force and signature == self.install_dirs_signature:
+            return
+        self.install_dirs_signature = signature
+        view = self.save_list_view(self.install_dirs_list)
+        self.clear_list(self.install_dirs_list)
+        self.fill_install_dirs(prefix, dirs)
+        self.restore_list_view(self.install_dirs_list, view)
+
+    def fill_install_dirs(self, prefix: Path, dirs: list[dict[str, object]]) -> None:
+        if not dirs:
+            self.install_dirs_list.append(self.empty_row(TEXT["no_install_dirs"]))
+            return
+        for item in dirs:
+            path = Path(item["path"])
+            row = SearchRow(str(item.get("name", path.name)), windows_display_path(prefix, path), key=str(path))
+            box = self.row_box()
+            detail = " · ".join([
+                windows_display_path(prefix, path),
+                TEXT["exe_count"].format(count=item.get("exe_count", 0)),
+                TEXT["linked_apps"].format(count=item.get("linked_count", 0)),
+            ])
+            box.append(self.icon_widget("folder-symbolic"))
+            box.append(self.text_column(str(item.get("name", path.name)), detail))
+            view = self.compact_button(TEXT["view_exes"], "run-button")
+            view.connect("clicked", lambda _b, directory=path, item_prefix=prefix: self.show_install_dir_exes(item_prefix, directory))
+            box.append(view)
+            open_dir = self.compact_button(TEXT["open_dir"])
+            open_dir.connect("clicked", lambda _b, directory=path: self.open_folder(directory))
+            box.append(open_dir)
+            delete_dir = self.compact_button(TEXT["delete_dir"], "menu-item-danger")
+            delete_dir.add_css_class("destructive-action")
+            delete_dir.connect("clicked", lambda _b, directory=path, item_prefix=prefix: self.confirm_delete_install_dir(item_prefix, directory))
+            box.append(delete_dir)
+            row.set_child(box)
+            self.install_dirs_list.append(row)
+
+    def refresh_processes(self) -> None:
+        processes = scan_processes(self.page_prefix("processes"))
+        view = self.save_list_view(self.process_list)
+        self.clear_list(self.process_list)
+        self.fill_processes(processes)
+        self.restore_list_view(self.process_list, view)
+
+    def fill_processes(self, processes: list[dict[str, str]]) -> None:
+        if not processes:
+            self.process_list.append(self.empty_row(TEXT["no_processes"]))
+            return
+        for proc in processes:
+            # not the exe: for every Windows program that is Wine's loader
+            row = SearchRow(proc["name"], proc["pid"], proc["command"], key=str(proc["pid"]))
+            box = self.row_box()
+            title = f"{proc['name']}  PID {proc['pid']}  {proc['age']}"
+            box.append(self.text_column(title, proc["command"]))
+            force = self.compact_button("", "menu-item-danger")
+            force.add_css_class("icon-button")
+            force.set_size_request(34, 34)
+            force.set_valign(Gtk.Align.CENTER)
+            force.set_tooltip_text(TEXT["force_kill"])
+            force.add_css_class("destructive-action")
+            force.connect("clicked", lambda _b, item=proc: self.kill_process(item, True))
+            box.append(force)
+            row.set_child(box)
+            self.process_list.append(row)
+
+    def set_status(self, message: str) -> None:
+        if self.status_label:
+            self.status_label.set_text(message)
+        if self.status_clear_source_id:
+            GLib.source_remove(self.status_clear_source_id)
+        self.status_clear_source_id = GLib.timeout_add_seconds(4, self.clear_status)
+
+    def clear_status(self) -> bool:
+        if self.status_label:
+            self.status_label.set_text("")
+        self.status_clear_source_id = 0
+        return False
+
+    def refresh_after_mutation(self) -> bool:
+        self.reload_prefixes()
+        self.refresh_apps(force=True)
+        self.refresh_install_dirs(force=True)
+        self.refresh_processes()
+        return False
+
+    def run_path(self, path: str, prefix: str = "", runner: str = "") -> None:
+        if not path:
+            return
+        command = [self.wrapper, "-p", prefix or str(self.current_prefix())]
+        if runner and Path(runner).is_file() and os.access(runner, os.X_OK):
+            command.extend(["--runner", runner])
+        elif "proton-ge" in runner.lower() or "ge-proton" in runner.lower():
+            command.extend(["--runner", "ge"])
+        elif "dw-proton" in runner.lower() or "dwproton" in runner.lower():
+            command.extend(["--runner", "dw"])
+        elif "we-proton" in runner.lower() or "weproton" in runner.lower():
+            command.extend(["--runner", "we"])
+        command.append(path)
+        subprocess.Popen(command)
+        mark_app_started(Path(prefix) if prefix else self.current_prefix(), path)
+        self.set_status(f"{TEXT['run']}: {path}")
+        self.refresh_apps(force=True)
+        GLib.timeout_add(800, self.refresh_apps_once)
+
+    def run_steam_game(self, appid: str, path: str, prefix: str) -> None:
+        subprocess.Popen(["xdg-open", f"steam://rungameid/{appid}"])
+        mark_app_started(Path(prefix), path)
+        self.set_status(f"{TEXT['run_via_steam']}: {appid}")
+        self.refresh_apps(force=True)
+        GLib.timeout_add(800, self.refresh_apps_once)
+
+    def refresh_apps_once(self) -> bool:
+        self.refresh_apps(force=True)
+        self.refresh_install_dirs(force=True)
+        return False
+
+    def show_install_dir_exes(self, prefix: Path, directory: Path) -> None:
+        exes = scan_exes_in_dir(directory)
+        dialog = Gtk.Dialog(title=str(directory.name), transient_for=self.window, modal=True)
+        dialog.set_default_size(860, 620)
+        dialog.add_button(TEXT["cancel"], Gtk.ResponseType.CLOSE)
+        content = dialog.get_content_area()
+        content.set_spacing(10)
+        content.set_margin_top(12)
+        content.set_margin_bottom(12)
+        content.set_margin_start(12)
+        content.set_margin_end(12)
+
+        heading = Gtk.Label(label=windows_display_path(prefix, directory), xalign=0, wrap=True)
+        heading.add_css_class("dim-label")
+        content.append(heading)
+
+        list_box = Gtk.ListBox()
+        list_box.set_selection_mode(Gtk.SelectionMode.NONE)
+        scrolled = Gtk.ScrolledWindow(hexpand=True, vexpand=True)
+        scrolled.set_child(list_box)
+        content.append(scrolled)
+
+        if not exes:
+            list_box.append(self.empty_row(TEXT["no_apps"]))
+        else:
+            for exe in exes:
+                row = Gtk.ListBoxRow()
+                box = self.row_box()
+                app = {"path": str(exe["path"]), "name": Path(exe["path"]).stem}
+                box.append(self.app_icon_widget(prefix, app))
+                title = str(exe["name"])
+                box.append(self.text_column(title, str(exe.get("detail", ""))))
+                add = self.compact_button(TEXT["add_app"], "run-button")
+                add.connect("clicked", lambda _b, exe_path=str(exe["path"]), d=dialog, item_prefix=prefix: self.add_exe_from_install_dir(d, item_prefix, exe_path))
+                box.append(add)
+                run = self.compact_button(TEXT["run"])
+                run.connect("clicked", lambda _b, exe_path=str(exe["path"]), item_prefix=prefix: self.run_path(exe_path, str(item_prefix), ""))
+                box.append(run)
+                row.set_child(box)
+                list_box.append(row)
+        dialog.connect("response", lambda d, _response: d.destroy())
+        dialog.present()
+
+    def add_exe_from_install_dir(self, dialog: Gtk.Dialog, prefix: Path, exe_path: str) -> None:
+        runners = load_runners(self.wrapper)
+        entry = {
+            "name": inferred_exe_name(expand_path(exe_path), prefix),
+            "exe": exe_path,
+            "prefix": str(prefix),
+            "runner": prefix_runner(prefix) or preferred_runner_path(runners),
+            "program_args": "",
+            "gamescope": "0",
+            "gamescope_fullscreen": "1",
+            "gamescope_res": "",
+            "gamescope_fps": "",
+            "gamescope_fsr": "0",
+            "gamescope_args": "",
+            "mangohud": "0",
+            "wayland": "0",
+            "env_vars": "",
+            "source": "install-dir",
+        }
+        dialog.destroy()
+        self.edit_cache_entry(entry)
+
+    def confirm_delete_install_dir(self, prefix: Path, directory: Path) -> None:
+        if not can_delete_install_dir(prefix, directory):
+            display_message(self.window, TEXT["delete_dir_title"], TEXT["delete_dir_blocked"])
+            return
+        dialog = Gtk.MessageDialog(
+            transient_for=self.window,
+            modal=True,
+            message_type=Gtk.MessageType.WARNING,
+            buttons=Gtk.ButtonsType.OK_CANCEL,
+            text=TEXT["delete_dir_title"],
+            secondary_text=TEXT["delete_dir_confirm"].format(path=windows_display_path(prefix, directory)),
+        )
+        dialog.get_widget_for_response(Gtk.ResponseType.OK).add_css_class("destructive-action")
+        dialog.connect("response", lambda d, response, item_prefix=prefix, path=directory: self.on_delete_install_dir_response(d, response, item_prefix, path))
+        dialog.present()
+
+    def on_delete_install_dir_response(self, dialog: Gtk.MessageDialog, response: int, prefix: Path, directory: Path) -> None:
+        dialog.destroy()
+        if response != Gtk.ResponseType.OK:
+            return
+        if not can_delete_install_dir(prefix, directory):
+            display_message(self.window, TEXT["delete_dir_title"], TEXT["delete_dir_blocked"])
+            return
+        try:
+            shutil.rmtree(directory)
+        except OSError as exc:
+            display_message(self.window, TEXT["error"], str(exc))
+            return
+        self.set_status(f"{TEXT['removed']}: {directory}")
+        self.refresh_after_mutation()
+
+    def confirm_delete_prefix(self, prefix: Path) -> None:
+        prefix = expand_path(prefix)
+        if scan_processes(prefix):
+            display_message(self.window, TEXT["delete_prefix_title"], TEXT["delete_prefix_running"])
+            return
+        if not can_delete_prefix(prefix):
+            display_message(self.window, TEXT["delete_prefix_title"], TEXT["delete_prefix_blocked"])
+            return
+        dialog = Gtk.MessageDialog(
+            transient_for=self.window,
+            modal=True,
+            message_type=Gtk.MessageType.WARNING,
+            buttons=Gtk.ButtonsType.OK_CANCEL,
+            text=TEXT["delete_prefix_title"],
+            secondary_text=TEXT["delete_prefix_confirm"].format(path=str(prefix)),
+        )
+        dialog.get_widget_for_response(Gtk.ResponseType.OK).add_css_class("destructive-action")
+        dialog.connect("response", lambda d, response, item_prefix=prefix: self.on_delete_prefix_response(d, response, item_prefix))
+        dialog.present()
+
+    def on_delete_prefix_response(self, dialog: Gtk.MessageDialog, response: int, prefix: Path) -> None:
+        dialog.destroy()
+        if response != Gtk.ResponseType.OK:
+            return
+        if scan_processes(prefix):
+            display_message(self.window, TEXT["delete_prefix_title"], TEXT["delete_prefix_running"])
+            return
+        if not can_delete_prefix(prefix):
+            display_message(self.window, TEXT["delete_prefix_title"], TEXT["delete_prefix_blocked"])
+            return
+        try:
+            shutil.rmtree(prefix)
+        except OSError as exc:
+            display_message(self.window, TEXT["error"], str(exc))
+            return
+        self.set_status(f"{TEXT['removed']}: {prefix}")
+        self.refresh_after_mutation()
+
+    def close_running_app(self, app_id: str) -> None:
+        """Ask the app's Windows processes to end, and kill what is left a few
+        seconds later; its launcher then exits on its own. Wine's processes and
+        the launcher hosting them serve the other programs too. Only an app
+        still starting, with no Windows process yet, has its launcher ended."""
+        everything = scan_processes(self.page_prefix("apps"))
+        own = app_own_processes(everything, app_id, session_host_pids(everything))
+        procs = [proc for proc in own if is_wine_process(proc)] or own
+        for proc in procs:
+            try:
+                kill_pid(int(proc["pid"]))
+            except OSError:
+                pass
+        self.set_status(f"{TEXT['close']}: {len(procs)}")
+        GLib.timeout_add_seconds(3, self.finish_closing_app, procs)
+
+    def finish_closing_app(self, procs: list[dict[str, str]]) -> bool:
+        for proc in procs:
+            try:
+                if (Path("/proc") / proc["pid"] / "comm").read_text().strip() == proc["name"]:
+                    kill_pid(int(proc["pid"]), True)
+            except OSError:
+                pass
+        self.refresh_apps(force=True)
+        self.refresh_processes()
+        return False
+
+    def show_log_dialog(self, title: str, log_path: Path | None) -> None:
+        if not log_path or not log_path.exists():
+            display_message(self.window, TEXT["log"], TEXT["no_log"])
+            return
+        dialog = Gtk.Dialog(title=f"{TEXT['log']} · {title}", transient_for=self.window, modal=True)
+        dialog.set_default_size(900, 620)
+        dialog.add_button(TEXT["cancel"], Gtk.ResponseType.CLOSE)
+        content = dialog.get_content_area()
+        content.set_spacing(8)
+        content.set_margin_top(12)
+        content.set_margin_bottom(12)
+        content.set_margin_start(12)
+        content.set_margin_end(12)
+
+        text = Gtk.TextView()
+        text.set_editable(False)
+        text.set_cursor_visible(False)
+        text.set_monospace(True)
+        buffer = text.get_buffer()
+
+        def load_log() -> None:
+            try:
+                buffer.set_text(log_path.read_text(errors="replace"))
+            except OSError as exc:
+                buffer.set_text(str(exc))
+
+        load_log()
+        scrolled = Gtk.ScrolledWindow(hexpand=True, vexpand=True)
+        scrolled.set_child(text)
+        content.append(scrolled)
+
+        actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        refresh = self.compact_button(TEXT["refresh"])
+        refresh.connect("clicked", lambda _button: load_log())
+        open_dir = self.compact_button(TEXT["open_log_dir"])
+        open_dir.connect("clicked", lambda _button: self.open_folder(log_path.parent))
+        actions.append(refresh)
+        actions.append(open_dir)
+        content.append(actions)
+        dialog.connect("response", lambda d, _response: d.destroy())
+        dialog.present()
+
+    def reconfigure(self, exe: str) -> None:
+        if not exe:
+            return
+        subprocess.Popen([self.configure, exe])
+
+    def on_create_config(self, _button) -> None:
+        runners = load_runners(self.wrapper)
+        prefix = self.page_prefix("apps")
+        entry = {
+            "exe": "",
+            "prefix": str(prefix),
+            "runner": prefix_runner(prefix) or preferred_runner_path(runners),
+            "program_args": "",
+            "gamescope": "0",
+            "gamescope_fullscreen": "1",
+            "gamescope_res": "",
+            "gamescope_fps": "",
+            "gamescope_fsr": "0",
+            "gamescope_args": "",
+            "mangohud": "0",
+            "wayland": "0",
+            "env_vars": "",
+            "source": "configured",
+        }
+        self.edit_cache_entry(entry)
+
+    def edit_cache_entry(self, entry: dict[str, str]) -> None:
+        dialog = Gtk.Dialog(title=TEXT["reconfigure"], transient_for=self.window, modal=True)
+        dialog.set_default_size(760, 560)
+        dialog.add_button(TEXT["cancel"], Gtk.ResponseType.CANCEL)
+        dialog.add_button(TEXT["save"], Gtk.ResponseType.ACCEPT)
+        content = dialog.get_content_area()
+        scrolled = Gtk.ScrolledWindow(hexpand=True, vexpand=True)
+        scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scrolled.set_min_content_height(420)
+        form = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        form.set_margin_top(14)
+        form.set_margin_bottom(14)
+        form.set_margin_start(14)
+        form.set_margin_end(14)
+        scrolled.set_child(form)
+        content.append(scrolled)
+
+        base_grid = Gtk.Grid(column_spacing=10, row_spacing=8)
+        form.append(base_grid)
+        widgets = {}
+
+        def add_entry(grid: Gtk.Grid, row: int, key: str, label: str):
+            label_widget = Gtk.Label(label=label, xalign=0)
+            field = Gtk.Entry(hexpand=True)
+            field.set_text(entry.get(key, ""))
+            grid.attach(label_widget, 0, row, 1, 1)
+            grid.attach(field, 1, row, 1, 1)
+            widgets[key] = field
+
+        def add_combo(grid: Gtk.Grid, row: int, key: str, label: str, values: list[str]):
+            label_widget = Gtk.Label(label=label, xalign=0)
+            field = self.combo_entry(values, entry.get(key, ""))
+            grid.attach(label_widget, 0, row, 1, 1)
+            grid.attach(field, 1, row, 1, 1)
+            widgets[key] = field
+
+        exe_label = Gtk.Label(label=TEXT["exe"], xalign=0)
+        exe_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        exe_entry = Gtk.Entry(hexpand=True)
+        exe_entry.set_text(entry.get("exe", entry.get("path", "")))
+        exe_browse = Gtk.Button(label=TEXT["browse"])
+        exe_browse.connect("clicked", lambda _b, field=exe_entry: self.browse_entry_file(field))
+        exe_box.append(exe_entry)
+        exe_box.append(exe_browse)
+        base_grid.attach(exe_label, 0, 0, 1, 1)
+        base_grid.attach(exe_box, 1, 0, 1, 1)
+        widgets["exe"] = exe_entry
+
+        prefix_label = Gtk.Label(label=TEXT["prefix"], xalign=0)
+        prefix_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        prefix_entry = Gtk.Entry(hexpand=True)
+        prefix_entry.set_text(entry.get("prefix", str(self.page_prefix("apps"))))
+        prefix_browse = Gtk.Button(label=TEXT["browse"])
+        prefix_browse.connect("clicked", lambda _b, field=prefix_entry: self.browse_entry_folder(field))
+        prefix_box.append(prefix_entry)
+        prefix_box.append(prefix_browse)
+        base_grid.attach(prefix_label, 0, 1, 1, 1)
+        base_grid.attach(prefix_box, 1, 1, 1, 1)
+        widgets["prefix"] = prefix_entry
+
+        runners = load_runners(self.wrapper)
+        runner_label_widget = Gtk.Label(label=TEXT["runner"], xalign=0)
+        current_runner = (entry.get("runner")
+                          or prefix_runner(expand_path(entry.get("prefix") or self.page_prefix("apps")))
+                          or preferred_runner_path(runners))
+        runner_field = self.runner_combo(runners, current_runner)
+        base_grid.attach(runner_label_widget, 0, 2, 1, 1)
+        base_grid.attach(runner_field, 1, 2, 1, 1)
+        widgets["runner"] = runner_field
+
+        add_entry(base_grid, 3, "program_args", TEXT["program_args"])
+        widgets["program_args"].set_placeholder_text("-krqlv=hd")
+        program_args_desc = Gtk.Label(label=TEXT["program_args_desc"], xalign=0, wrap=True)
+        program_args_desc.add_css_class("dim-label")
+        base_grid.attach(program_args_desc, 1, 4, 1, 1)
+
+        gamescope_card = card(TEXT["gamescope"], TEXT["gamescope_desc"])
+        gamescope_grid = Gtk.Grid(column_spacing=10, row_spacing=8)
+        gamescope_card.append(gamescope_grid)
+        form.append(gamescope_card)
+
+        gamescope = Gtk.CheckButton(label=TEXT["use_gamescope"])
+        gamescope.set_active(entry.get("gamescope", "0") == "1")
+        fullscreen = Gtk.CheckButton(label=TEXT["fullscreen"])
+        fullscreen.set_active(entry.get("gamescope_fullscreen", "1") == "1")
+        fsr = Gtk.CheckButton(label="FSR")
+        fsr.set_active(entry.get("gamescope_fsr", "0") == "1")
+        checks = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        for check in (gamescope, fullscreen, fsr):
+            checks.append(check)
+        gamescope_grid.attach(checks, 0, 0, 2, 1)
+        add_combo(gamescope_grid, 1, "gamescope_res", TEXT["resolution"], resolution_options())
+        add_combo(gamescope_grid, 2, "gamescope_fps", TEXT["fps"], fps_options())
+        add_entry(gamescope_grid, 3, "gamescope_args", TEXT["extra_args"])
+        gamescope_controls = [fsr, widgets["gamescope_res"], widgets["gamescope_fps"], widgets["gamescope_args"]]
+
+        def update_gamescope_sensitivity(_button=None):
+            active = gamescope.get_active()
+            fullscreen.set_sensitive(active)
+            if not active:
+                fullscreen.set_active(True)
+            for widget in gamescope_controls:
+                widget.set_sensitive(active)
+
+        gamescope.connect("toggled", update_gamescope_sensitivity)
+        update_gamescope_sensitivity()
+
+        other_card = card(TEXT["display"])
+        other_grid = Gtk.Grid(column_spacing=10, row_spacing=8)
+        other_card.append(other_grid)
+        form.append(other_card)
+        mangohud = Gtk.CheckButton(label=TEXT["mangohud"])
+        mangohud.set_active(entry.get("mangohud", "0") == "1")
+        other_grid.attach(mangohud, 0, 0, 2, 1)
+        mangohud_desc = Gtk.Label(label=TEXT["mangohud_desc"], xalign=0, wrap=True)
+        mangohud_desc.add_css_class("dim-label")
+        other_grid.attach(mangohud_desc, 0, 1, 2, 1)
+        wayland = Gtk.CheckButton(label=TEXT["wayland"])
+        wayland.set_active(entry.get("wayland", "0") == "1")
+        other_grid.attach(wayland, 0, 2, 2, 1)
+        wayland_desc = Gtk.Label(label=TEXT["wayland_desc"], xalign=0, wrap=True)
+        wayland_desc.add_css_class("dim-label")
+        other_grid.attach(wayland_desc, 0, 3, 2, 1)
+        add_entry(other_grid, 4, "env_vars", TEXT["env_vars"])
+        # Gamescope only offers X11
+        gamescope.connect("toggled", lambda button: wayland.set_sensitive(not button.get_active()))
+        wayland.set_sensitive(not gamescope.get_active())
+        widgets.update({"gamescope": gamescope, "gamescope_fullscreen": fullscreen, "gamescope_fsr": fsr,
+                        "mangohud": mangohud, "wayland": wayland})
+
+        dialog.connect("response", lambda d, response, item=entry, fields=widgets: self.on_cache_edit_response(d, response, item, fields))
+        dialog.present()
+
+    def on_cache_edit_response(self, dialog, response, entry: dict[str, str], widgets: dict) -> None:
+        changed = False
+        if response == Gtk.ResponseType.ACCEPT:
+            entry["exe"] = widgets["exe"].get_text().strip()
+            entry["prefix"] = widgets["prefix"].get_text().strip()
+            entry["runner"] = self.runner_combo_path(widgets["runner"])
+            entry["program_args"] = widgets["program_args"].get_text().strip()
+            entry["gamescope_res"] = self.combo_entry_text(widgets["gamescope_res"])
+            entry["gamescope_fps"] = self.combo_entry_text(widgets["gamescope_fps"])
+            entry["gamescope_args"] = widgets["gamescope_args"].get_text().strip()
+            entry["env_vars"] = widgets["env_vars"].get_text().strip()
+            for key in ("gamescope", "gamescope_fullscreen", "gamescope_fsr", "mangohud"):
+                entry[key] = "1" if widgets[key].get_active() else "0"
+            entry["wayland"] = "1" if widgets["wayland"].get_active() and entry["gamescope"] == "0" else "0"
+            # the name shown in the list, which may have been renamed
+            entry["name"] = entry.get("display_name") or entry.get("name", "")
+            entry["source"] = "configured"
+            write_cache_entry(entry)
+            self.set_status(f"{TEXT['reconfigure']}: {entry.get('exe', '')}")
+            changed = True
+        dialog.destroy()
+        if changed:
+            GLib.idle_add(self.refresh_after_mutation)
+
+    def delete_cache(self, file_path: str) -> None:
+        if file_path:
+            Path(file_path).unlink(missing_ok=True)
+        self.refresh_after_mutation()
+
+    def open_folder(self, folder: Path) -> None:
+        subprocess.Popen(["xdg-open", str(folder)])
+
+    def export_one_app(self, app: dict[str, str]) -> None:
+        self.do_export_one_app(app, app_display_name(app))
+
+    def do_export_one_app(self, app: dict[str, str], display_name: str) -> None:
+        target = export_app(self.current_prefix(), app, self.wrapper, display_name)
+        maybe_update_desktop_database()
+        self.set_status(f"{TEXT['exported']}: {target}")
+        self.refresh_after_mutation()
+
+    def prompt_rename_app(self, app: dict[str, str]) -> None:
+        dialog = Gtk.Dialog(title=TEXT["rename"], transient_for=self.window, modal=True)
+        dialog.add_button(TEXT["cancel"], Gtk.ResponseType.CANCEL)
+        dialog.add_button(TEXT["save"], Gtk.ResponseType.ACCEPT)
+        content = dialog.get_content_area()
+        content.set_spacing(10)
+        content.set_margin_top(14)
+        content.set_margin_bottom(14)
+        content.set_margin_start(14)
+        content.set_margin_end(14)
+        label = Gtk.Label(label=TEXT["menu_name"], xalign=0)
+        entry = Gtk.Entry()
+        entry.set_text(app_display_name(app))
+        entry.set_activates_default(True)
+        content.append(label)
+        content.append(entry)
+        dialog.set_default_response(Gtk.ResponseType.ACCEPT)
+        dialog.connect("response", lambda d, response, item=app, field=entry: self.on_rename_app_response(d, response, item, field))
+        dialog.present()
+
+    def on_rename_app_response(self, dialog, response, app: dict[str, str], entry: Gtk.Entry) -> None:
+        if response == Gtk.ResponseType.ACCEPT:
+            old_name = app_display_name(app)
+            name = entry.get_text().strip() or app_display_name(app)
+            renamed_icons = rename_icon_cache_files(old_name, name)
+            cache_entry = app_cache_entry(self.page_prefix("apps"), app)
+            cache_entry["name"] = name
+            write_cache_entry(cache_entry)
+            desktop = exported_desktop_path(self.page_prefix("apps"), app)
+            if desktop.is_file():
+                rewrite_desktop_name(desktop, name)
+                rewrite_desktop_icon(desktop, renamed_icons)
+            self.set_status(f"{TEXT['rename']}: {name}")
+        dialog.destroy()
+        self.refresh_after_mutation()
+
+    def delete_library_item(self, app: dict[str, str]) -> None:
+        prefix = self.page_prefix("apps")
+        desktop = delete_exported_app(prefix, app)
+        for file_path in app_cache_files(prefix, app):
+            file_path.unlink(missing_ok=True)
+        maybe_update_desktop_database()
+        status = f"{TEXT['removed']}: {desktop}"
+        if app.get("kind") == "shortcut":
+            status += f" ({TEXT['shortcut_still_listed']})"
+        self.set_status(status)
+        self.refresh_after_mutation()
+
+    def kill_process(self, proc: dict[str, str], force: bool) -> None:
+        try:
+            kill_pid(int(proc["pid"]), force)
+        except OSError as exc:
+            display_message(self.window, TEXT["error"], str(exc))
+        self.refresh_processes()
+
+    def on_kill_all_processes(self, _button) -> None:
+        processes = scan_processes(self.current_prefix())
+        for proc in processes:
+            try:
+                kill_pid(int(proc["pid"]), True)
+            except OSError:
+                pass
+        self.refresh_processes()
+        self.set_status(f"{TEXT['kill_all']}: {len(processes)}")
+
+    def browse_prefix(self, combo: Gtk.ComboBoxText) -> None:
+        dialog = Gtk.FileChooserNative(
+            title=TEXT["prefix"],
+            transient_for=self.window,
+            action=Gtk.FileChooserAction.SELECT_FOLDER,
+            accept_label=TEXT["browse"],
+            cancel_label=TEXT["cancel"],
+        )
+        dialog.connect("response", lambda d, response, selector=combo: self.on_prefix_response(d, response, selector))
+        dialog.show()
+
+    def on_prefix_response(self, dialog, response, combo: Gtk.ComboBoxText) -> None:
+        if response == Gtk.ResponseType.ACCEPT:
+            file = dialog.get_file()
+            if file:
+                path = Path(file.get_path())
+                if str(path) not in [str(item) for item in self.prefixes]:
+                    self.prefixes.append(path)
+                    for selector in (self.apps_prefix_combo, self.install_dirs_prefix_combo, self.process_prefix_combo):
+                        if selector:
+                            selector.append_text(str(path))
+                combo.set_active(len(self.prefixes) - 1)
+                self.refresh_all()
+        dialog.destroy()
+
+
+def main() -> int:
+    warnings.filterwarnings("ignore", category=DeprecationWarning)
+    app = ManagerApp()
+    try:
+        return app.run(sys.argv)
+    except KeyboardInterrupt:
+        return 130
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

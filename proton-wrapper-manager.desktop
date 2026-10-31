@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Proton Wrapper Manager
+Name[zh_CN]=Proton Wrapper 管理器
+Comment=Manage Proton prefixes, Windows shortcuts, processes, and saved configs
+Exec=proton-wrapper-manager
+Icon=proton-wrapper
+Terminal=false
+Categories=Utility;X-Wine;
+StartupNotify=false
