@@ -9,7 +9,7 @@
       <stop offset="1" stop-color="#ef8c2b"/>
     </linearGradient>
     <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#ffffff" stop-opacity="0.14"/>
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.12"/>
       <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
     </linearGradient>
   </defs>
@@ -17,10 +17,13 @@
   <!-- 底板 -->
   <rect x="16" y="16" width="480" height="480" rx="112" fill="url(#ink)"/>
   <rect x="16" y="16" width="480" height="480" rx="112" fill="url(#gloss)"/>
-  <rect x="16.5" y="16.5" width="479" height="479" rx="111.5" fill="none" stroke="#ffffff" stroke-opacity="0.09"/>
 
-  <!-- 一个 W：中间那道竖折压短一点，像两扇窗并排 -->
-  <path d="M 146 176 L 206 330 L 256 238 L 306 330 L 366 176"
-        fill="none" stroke="url(#amber)" stroke-width="37"
-        stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- 后面那扇窗：空的 -->
+  <rect x="196" y="104" width="220" height="220" rx="52" fill="none"
+        stroke="#ffffff" stroke-opacity="0.26" stroke-width="13"/>
+  <path d="M 196 162 H 416" stroke="#ffffff" stroke-opacity="0.26" stroke-width="13"/>
+
+  <!-- 前面那扇窗：里面那个 Windows 程序，正跑着 -->
+  <rect x="96" y="188" width="220" height="220" rx="52" fill="url(#amber)"/>
+  <path d="M 96 246 H 316" stroke="#0f1114" stroke-opacity="0.18" stroke-width="13"/>
 </svg>

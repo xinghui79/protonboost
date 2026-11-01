@@ -6,6 +6,7 @@
 #include "rust/cxx.h"
 
 void winrun_install_log_bridge();
+void winrun_set_window_icon(const QString &iconPath);
 std::unique_ptr<QApplication> winrun_app_new(const QString &version);
 int winrun_app_exec(const QApplication &app);
 void winrun_app_quit();

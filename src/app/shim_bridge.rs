@@ -12,6 +12,9 @@ pub mod ffi {
         #[rust_name = "log_bridge"]
         fn winrun_install_log_bridge();
 
+        #[rust_name = "set_window_icon"]
+        fn winrun_set_window_icon(icon_path: &QString);
+
         #[rust_name = "app_new"]
         fn winrun_app_new(version: &QString) -> UniquePtr<QApplication>;
 
@@ -46,6 +49,6 @@ pub mod ffi {
 }
 
 pub use ffi::{
-    app_exec, app_new, app_quit, grab_windows, icon_convert, log_bridge, theme_icon,
+    app_exec, app_new, app_quit, grab_windows, icon_convert, log_bridge, set_window_icon, theme_icon,
     tray_cleanup, tray_create, tray_set_menu_title,
 };

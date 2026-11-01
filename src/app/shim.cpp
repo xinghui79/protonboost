@@ -23,6 +23,10 @@ void winrun_install_log_bridge() {
     });
 }
 
+void winrun_set_window_icon(const QString &iconPath) {
+    QApplication::setWindowIcon(QIcon(iconPath));
+}
+
 std::unique_ptr<QApplication> winrun_app_new(const QString &version) {
     static int argc = 1;
     static char arg0[] = "winrun-manager";

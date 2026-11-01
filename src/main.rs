@@ -107,6 +107,12 @@ fn main() {
     shim_bridge::log_bridge();
     let mut app = shim_bridge::app_new(&QString::from(env!("CARGO_PKG_VERSION")));
 
+    // 窗口/任务栏图标
+    let icon_path = tray_icon_path();
+    if icon_path.is_file() {
+        shim_bridge::set_window_icon(&QString::from(icon_path.to_string_lossy().as_ref()));
+    }
+
     // 托盘（独立配置窗口不需要）
     if !configure_mode {
         let (open_text, quit_text) = if core::loc::zh() {

@@ -561,11 +561,11 @@ ApplicationWindow {
             opacity: 0.8
         }
 
-        // 右上角：搜索 + 当前页面的主操作（macOS 工具栏的位置）
+        // 右上角：搜索 + 当前页面的主操作，最右边是 Windows 式的窗口按钮
         RowLayout {
             visible: !root.configureMode
             anchors.right: parent.right
-            anchors.rightMargin: 12
+            anchors.rightMargin: 146
             anchors.verticalCenter: parent.verticalCenter
             spacing: 8
 
@@ -594,6 +594,72 @@ ApplicationWindow {
                 implicitHeight: 28
                 text: root.zh ? "刷新" : "Refresh"
                 onClicked: root.refreshCurrent()
+            }
+        }
+
+        // Windows 式的窗口按钮：最小化 / 最大化 / 关闭，贴右上角整高
+        Row {
+            id: captionButtons
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+
+            component CaptionButton: AbstractButton {
+                id: cap
+                property string kind: "min"
+                width: 46
+                height: captionButtons.height
+                hoverEnabled: true
+                background: Rectangle {
+                    color: cap.kind === "close" && cap.hovered ? "#c42b1c"
+                         : (cap.pressed ? c.press : (cap.hovered ? c.hover : "transparent"))
+                }
+                contentItem: Item {
+                    readonly property color stroke: cap.kind === "close" && cap.hovered ? "#ffffff" : c.text
+                    Rectangle {
+                        visible: cap.kind === "min"
+                        anchors.centerIn: parent
+                        width: 10
+                        height: 1
+                        color: parent.stroke
+                    }
+                    Rectangle {
+                        visible: cap.kind === "max"
+                        anchors.centerIn: parent
+                        width: 9
+                        height: 9
+                        color: "transparent"
+                        border.width: 1
+                        border.color: parent.stroke
+                    }
+                    Item {
+                        visible: cap.kind === "close"
+                        anchors.centerIn: parent
+                        width: 10
+                        height: 10
+                        Rectangle {
+                            anchors.centerIn: parent
+                            width: 11
+                            height: 1
+                            color: parent.parent.stroke
+                            rotation: 45
+                        }
+                        Rectangle {
+                            anchors.centerIn: parent
+                            width: 11
+                            height: 1
+                            color: parent.parent.stroke
+                            rotation: -45
+                        }
+                    }
+                }
+            }
+
+            CaptionButton { kind: "min"; onClicked: root.showMinimized() }
+            CaptionButton { kind: "max"; onClicked: root.toggleMaximized() }
+            CaptionButton {
+                kind: "close"
+                onClicked: { if (root.configureMode) Qt.quit(); else root.hide() }
             }
         }
 
