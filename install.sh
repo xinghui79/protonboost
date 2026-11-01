@@ -13,6 +13,8 @@ ICON_SVG="$PREFIX/share/icons/hicolor/scalable/apps"
 case "$MODE" in
 install)
     install -Dm755 -t "$BIN_DIR" bin/winrun bin/winrun-configure bin/winrun-manager
+    install -d "$PREFIX/lib/winrun"
+    install -m644 -t "$PREFIX/lib/winrun" lib/*.sh
     install -Dm644 -t "$APP_DIR" share/applications/*.desktop
     install -Dm644 icons/winrun.png "$ICON_PNG/winrun.png"
     install -Dm644 icons/winrun.svg "$ICON_SVG/winrun.svg"
@@ -26,6 +28,7 @@ uninstall)
           "$APP_DIR/winrun-run-windows-program.desktop" \
           "$APP_DIR/winrun-windows-program-configure.desktop"
     rm -f "$ICON_PNG/winrun.png" "$ICON_SVG/winrun.svg"
+    rm -rf "$PREFIX/lib/winrun"
     command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$APP_DIR" || true
     echo "已从 $PREFIX 移除 winrun"
     ;;

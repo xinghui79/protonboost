@@ -6,7 +6,11 @@
 ## 项目结构
 
 ```
-bin/winrun                     主程序（bash）
+bin/winrun                     主入口：默认值、模块装载、分发（163 行）
+lib/                           功能模块，按序 source 装载：
+                               10-core 20-usage 30-utils 40-product 50-install
+                               60-launch 70-session 80-prefix 90-status 91-cli
+                               92-helpers（keeper / gamescope / 输入法监听）
 bin/winrun-configure           「设置 Windows 程序运行环境」
 bin/winrun-manager             图形管理器（GTK4）
 share/applications/            桌面文件（右键打开方式 / 管理器入口）
