@@ -59,7 +59,7 @@ TEXT = {
     "net_off": "宿主网络" if ZH else "host network",
     "library": "仓库" if ZH else "Repository",
     "install_dirs": "目录" if ZH else "Folders",
-    "install_dirs_desc": "可能包含 Windows 程序的安装目录。选择目录中的 exe 后会创建应用配置。" if ZH else "Install folders that may contain Windows apps. Pick an exe to create an app config.",
+    "install_dirs_desc": "前缀里 Windows 程序的安装文件夹；选中里面的 exe 可以创建应用配置。" if ZH else "Install folders inside the prefix; pick an exe to create an app config.",
     "processes": "进程" if ZH else "Processes",
     "config": "配置" if ZH else "Config",
     "add_config": "添加配置" if ZH else "Add Config",
@@ -119,7 +119,7 @@ TEXT = {
     "update_done": "更新完成" if ZH else "Update complete",
     "update_failed": "更新失败" if ZH else "Update failed",
     "no_update": "已是最新版本" if ZH else "Up to date",
-    "processes_desc": "按 WINEPREFIX / STEAM_COMPAT_DATA_PATH 追踪并强制关闭进程。" if ZH else "Tracks and force closes processes by WINEPREFIX / STEAM_COMPAT_DATA_PATH.",
+    "processes_desc": "强制结束运行中的 Windows 程序进程，程序卡死时用。" if ZH else "Force close running Windows program processes.",
     "cache_desc": "管理通过“设置 Windows 软件运行环境”保存的 exe 配置。" if ZH else "Manage exe configs saved by Configure Windows Software.",
     "view_exes": "应用列表" if ZH else "App List",
     "add_app": "加入应用" if ZH else "Add App",
@@ -1357,6 +1357,10 @@ def install_css() -> None:
 }
 .prefix-toolbar {
   padding: 0;
+}
+.prefix-toolbar > combo,
+.prefix-toolbar > button {
+  min-height: 34px;
 }
 .prefix-label {
   color: alpha(@theme_fg_color, 0.72);
@@ -2733,8 +2737,6 @@ class ManagerApp(Gtk.Application):
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         box.add_css_class("prefix-toolbar")
-        label = Gtk.Label(label=TEXT["prefix"], xalign=0)
-        label.add_css_class("prefix-label")
         combo = Gtk.ComboBoxText()
         combo.set_hexpand(True)
         # a long prefix path must not keep the window from getting narrower
@@ -2758,7 +2760,6 @@ class ManagerApp(Gtk.Application):
         delete_prefix.set_valign(Gtk.Align.CENTER)
         delete_prefix.set_tooltip_text(TEXT["delete_prefix"])
         delete_prefix.connect("clicked", lambda _b, selector_page=page: self.confirm_delete_prefix(self.page_prefix(selector_page)))
-        box.append(label)
         box.append(combo)
         box.append(browse)
         box.append(open_prefix)
@@ -2766,7 +2767,6 @@ class ManagerApp(Gtk.Application):
         if page == "apps":
             self.update_button = self.create_update_button()
             box.append(self.update_button)
-            box.append(self.netns_toggle())
             box.append(self.cache_dirs_menu_button())
         path_label = None
         if page == "processes":
