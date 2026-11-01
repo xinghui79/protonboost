@@ -561,42 +561,6 @@ ApplicationWindow {
             opacity: 0.8
         }
 
-        // 右上角：搜索 + 当前页面的主操作，最右边是 Windows 式的窗口按钮
-        RowLayout {
-            visible: !root.configureMode
-            anchors.right: parent.right
-            anchors.rightMargin: 146
-            anchors.verticalCenter: parent.verticalCenter
-            spacing: 8
-
-            WSearchField {
-                id: pageSearchField
-                Layout.preferredWidth: 200
-                implicitHeight: 28
-                placeholderText: root.searchHints[root.currentPage]
-                text: root.searchValues[root.currentPage]
-                onTextEdited: {
-                    var copy = root.searchValues.slice()
-                    copy[root.currentPage] = text
-                    root.searchValues = copy
-                }
-            }
-
-            WAccentButton {
-                visible: root.currentPage === 0
-                implicitHeight: 28
-                text: root.zh ? "添加应用" : "Add App"
-                onClicked: backend.new_config(root.appsPrefix)
-            }
-            WButton {
-                visible: root.currentPage === 2
-                outlined: true
-                implicitHeight: 28
-                text: root.zh ? "刷新" : "Refresh"
-                onClicked: root.refreshCurrent()
-            }
-        }
-
         // Windows 式的窗口按钮：最小化 / 最大化 / 关闭，贴右上角整高
         Row {
             id: captionButtons
@@ -800,6 +764,7 @@ ApplicationWindow {
     // ── 页面骨架 ────────────────────────────────────────────
     component PageHeader: Item {
         implicitHeight: headLayout.implicitHeight
+        default property alias actions: actionsRow.data
         ColumnLayout {
             id: headLayout
             anchors.left: parent.left
@@ -817,6 +782,7 @@ ApplicationWindow {
                     font.letterSpacing: -0.4
                 }
                 Item { Layout.fillWidth: true }
+                RowLayout { id: actionsRow; spacing: 8 }
             }
             Text {
                 text: root.pageSubtitles[root.currentPage]
@@ -835,6 +801,18 @@ ApplicationWindow {
         PrefixPicker {}
         Item { Layout.fillWidth: true }
         RowLayout { id: trailingRow; spacing: 8 }
+        WSearchField {
+            id: pageSearchField
+            Layout.preferredWidth: 220
+            implicitHeight: 34
+            placeholderText: root.searchHints[root.currentPage]
+            text: root.searchValues[root.currentPage]
+            onTextEdited: {
+                var copy = root.searchValues.slice()
+                copy[root.currentPage] = text
+                root.searchValues = copy
+            }
+        }
     }
 
     // 分组列表：一个圆角容器装所有行
@@ -946,7 +924,13 @@ ApplicationWindow {
             anchors.margins: 24
             spacing: 16
 
-            PageHeader { Layout.fillWidth: true }
+            PageHeader {
+                Layout.fillWidth: true
+                WAccentButton {
+                    text: root.zh ? "添加应用" : "Add App"
+                    onClicked: backend.new_config(root.appsPrefix)
+                }
+            }
 
             PageToolbar {
                 Layout.fillWidth: true
@@ -1147,7 +1131,7 @@ ApplicationWindow {
                 EmptyState {
                     glyph: "◫"
                     title: root.zh ? "还没有应用" : "No apps yet"
-                    hint: root.zh ? "点右上角“添加应用”，或在“目录”页从一个 exe 生成配置。"
+                    hint: root.zh ? "点“添加应用”，或在“目录”页从一个 exe 生成配置。"
                                   : "Add one, or create it from an executable in Folders."
                     actionText: root.zh ? "添加应用" : "Add App"
                     action: function () { backend.new_config(root.appsPrefix) }
@@ -1276,6 +1260,11 @@ ApplicationWindow {
 
             PageToolbar {
                 Layout.fillWidth: true
+                WButton {
+                    outlined: true
+                    text: root.zh ? "刷新" : "Refresh"
+                    onClicked: root.refreshCurrent()
+                }
                 WDangerButton {
                     text: root.zh ? "结束全部进程" : "Close All"
                     onClicked: backend.kill_all_processes(root.procsPrefix)
