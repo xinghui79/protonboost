@@ -74,6 +74,11 @@ fn main() {
         }
         let dirs = core::scan::scan_install_dirs(&path, &[]);
         println!("dirs: {}", dirs.len());
+        // 进程页的前缀列表比应用页多（含运行中的和常见位置的），排查「同名前缀」看这里
+        println!("process prefixes:");
+        for prefix in core::prefix::collect_process_prefixes() {
+            println!("  {}", prefix.to_string_lossy());
+        }
         return;
     }
 
