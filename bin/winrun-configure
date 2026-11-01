@@ -78,7 +78,7 @@ TEXT = {
     "no_runner": "没有找到 Proton 或 Wine 运行器。" if ZH else "No Proton or Wine runner found.",
     "select_prefix": "请选择前置环境目录。" if ZH else "Select a prefix directory.",
     "select_runner": "请选择运行器。" if ZH else "Select a runner.",
-    "no_exe_error": "proton-wrapper-configure: 未提供可执行文件" if ZH else "proton-wrapper-configure: no executable provided",
+    "no_exe_error": "winrun-configure: 未提供可执行文件" if ZH else "winrun-configure: no executable provided",
     "not_installed": "未安装" if ZH else "not installed",
 }
 
@@ -344,17 +344,17 @@ checkbutton:focus-within {
 
 
 def resolve_wrapper() -> str:
-    env = os.environ.get("PROTON_WRAPPER")
+    env = os.environ.get("WINRUN")
     if env:
         return env
-    candidate = Path(__file__).resolve().with_name("proton-wrapper")
+    candidate = Path(__file__).resolve().with_name("winrun")
     if candidate.is_file() and os.access(candidate, os.X_OK):
         return str(candidate)
-    return "proton-wrapper"
+    return "winrun"
 
 
 def default_prefix() -> str:
-    return str(Path(os.environ.get("PROTON_PREFIX", Path.home() / ".proton")).expanduser())
+    return str(Path(os.environ.get("WINRUN_PREFIX", Path.home() / ".proton")).expanduser())
 
 
 def has_mangohud() -> bool:
@@ -387,7 +387,7 @@ def env_from_text(value: str) -> dict[str, str]:
 
 def cache_file_for(exe: Path) -> Path:
     cache_home = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
-    cache_dir = cache_home / "proton-wrapper" / "associations"
+    cache_dir = cache_home / "winrun" / "associations"
     cache_dir.mkdir(parents=True, exist_ok=True)
     key = hashlib.sha256(str(exe).encode()).hexdigest()
     return cache_dir / f"{key}.conf"
@@ -572,7 +572,7 @@ def gamescope_summary(options: dict) -> str:
 
 class SelectorApp(Gtk.Application):
     def __init__(self, exe: Path):
-        super().__init__(application_id="io.github.protonwrapper.proton_wrapper_configure")
+        super().__init__(application_id="io.github.winrun.winrun_configure")
         self.exe = exe
         self.wrapper = resolve_wrapper()
         self.cache_file = cache_file_for(exe)

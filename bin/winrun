@@ -2,24 +2,24 @@
 set -euo pipefail
 
 ORIGINAL_ARGS=("$@")
-DEFAULT_PREFIX="${PROTON_PREFIX:-$HOME/.proton}"
+DEFAULT_PREFIX="${WINRUN_PREFIX:-$HOME/.proton}"
 XDG_DATA_HOME_VALUE="${XDG_DATA_HOME:-$HOME/.local/share}"
 XDG_CACHE_HOME_VALUE="${XDG_CACHE_HOME:-$HOME/.cache}"
 # Runners go where Steam keeps compatibility tools, which other launchers read
 # too; earlier versions installed them in LOCAL_RUNNER_DIR, still used.
 STEAM_RUNNER_DIR="$HOME/.local/share/Steam/compatibilitytools.d"
 LOCAL_RUNNER_DIR="$XDG_DATA_HOME_VALUE/proton/runners"
-WRAPPER_CACHE_DIR="$XDG_CACHE_HOME_VALUE/proton-wrapper"
+WRAPPER_CACHE_DIR="$XDG_CACHE_HOME_VALUE/winrun"
 INSTALL_DOWNLOAD_DIR="$WRAPPER_CACHE_DIR/downloads"
-DOWNLOAD_TIMEOUT_SECONDS="${PROTON_WRAPPER_DOWNLOAD_TIMEOUT:-0}"
-DOWNLOAD_STALL_SECONDS="${PROTON_WRAPPER_DOWNLOAD_STALL:-120}"
-DOWNLOAD_NOTIFY_INTERVAL="${PROTON_WRAPPER_NOTIFY_INTERVAL:-8}"
-DOWNLOAD_NOTIFY_EXPIRE="${PROTON_WRAPPER_NOTIFY_EXPIRE:-8000}"
+DOWNLOAD_TIMEOUT_SECONDS="${WINRUN_DOWNLOAD_TIMEOUT:-0}"
+DOWNLOAD_STALL_SECONDS="${WINRUN_DOWNLOAD_STALL:-120}"
+DOWNLOAD_NOTIFY_INTERVAL="${WINRUN_NOTIFY_INTERVAL:-8}"
+DOWNLOAD_NOTIFY_EXPIRE="${WINRUN_NOTIFY_EXPIRE:-8000}"
 STEAM_ROOT="${STEAM_COMPAT_CLIENT_INSTALL_PATH:-$HOME/.steam/root}"
 # Proton runs inside the Steam Linux Runtime its toolmanifest.vdf asks for;
-# set PROTON_WRAPPER_RUNTIME=0 to run it directly on the host.
-RUNTIME_ENABLED="${PROTON_WRAPPER_RUNTIME:-1}"
-RUNTIME_DIR="$XDG_DATA_HOME_VALUE/proton-wrapper/runtime"
+# set WINRUN_RUNTIME=0 to run it directly on the host.
+RUNTIME_ENABLED="${WINRUN_RUNTIME:-1}"
+RUNTIME_DIR="$XDG_DATA_HOME_VALUE/winrun/runtime"
 RUNTIME_PREFIX=()
 
 # 0 means no total cap: a slow but healthy download must not be killed.
@@ -36,7 +36,7 @@ ACTION=""
 PRODUCT=""
 VERSION="latest"
 PREFIX="$DEFAULT_PREFIX"
-RUNNER_ARG="${PROTON_RUNNER:-}"
+RUNNER_ARG="${WINRUN_RUNNER:-}"
 DOWNLOAD_DIR=""
 INSTALL_DIR=""
 INSTALL_TO="default"
@@ -70,7 +70,7 @@ DEFAULT_PRODUCT="we"
 if [[ "$0" == */* ]]; then
   SELF_PATH="$(realpath -m "$0")"
 else
-  SELF_PATH="$(command -v proton-wrapper || printf 'proton-wrapper')"
+  SELF_PATH="$(command -v winrun || printf 'winrun')"
 fi
 
 RUNNER_TYPES=()
@@ -82,8 +82,8 @@ CACHED_ENV=()
 RUN_ENV=()
 declare -A RUNNER_SEEN=()
 
-[[ -n "${PROTON_PREFIX:-}" ]] && PREFIX_EXPLICIT=1
-[[ -n "${PROTON_RUNNER:-}" ]] && RUNNER_EXPLICIT=1
+[[ -n "${WINRUN_PREFIX:-}" ]] && PREFIX_EXPLICIT=1
+[[ -n "${WINRUN_RUNNER:-}" ]] && RUNNER_EXPLICIT=1
 
 ui_lang() {
   local locale="${LANG_OVERRIDE:-${LC_ALL:-${LC_MESSAGES:-${LANG:-}}}}"
@@ -97,7 +97,7 @@ setup_debug_logging() {
   local log_dir name timestamp
   [[ $DEBUG -eq 1 ]] || return 0
 
-  log_dir="$XDG_CACHE_HOME_VALUE/proton-wrapper/logs"
+  log_dir="$XDG_CACHE_HOME_VALUE/winrun/logs"
   mkdir -p "$log_dir"
   DEBUG_ENV=("PROTON_LOG=1" "PROTON_LOG_DIR=$log_dir")
   [[ -n "$TARGET" ]] && return 0
@@ -108,7 +108,7 @@ setup_debug_logging() {
   DEBUG_LOG="$log_dir/$timestamp-$name.log"
   exec > >(tee -a "$DEBUG_LOG") 2>&1
   printf 'Debug log: %s\n' "$DEBUG_LOG"
-  printf 'Command: proton-wrapper'
+  printf 'Command: winrun'
   printf ' %q' "${ORIGINAL_ARGS[@]}"
   printf '\n'
 }
@@ -132,15 +132,15 @@ PY
 setup_run_logging() {
   local log_dir
   RUN_APP_ID="$(wrapper_app_id "$PREFIX" "$TARGET")"
-  log_dir="$XDG_CACHE_HOME_VALUE/proton-wrapper/logs/$RUN_APP_ID"
+  log_dir="$XDG_CACHE_HOME_VALUE/winrun/logs/$RUN_APP_ID"
   mkdir -p "$log_dir"
   rm -f "$log_dir"/*.log
   RUN_LOG="$log_dir/latest.log"
   RUN_ENV=(
-    "PROTON_WRAPPER_APP_ID=$RUN_APP_ID"
-    "PROTON_WRAPPER_APP_PATH=$TARGET"
-    "PROTON_WRAPPER_PREFIX=$PREFIX"
-    "PROTON_WRAPPER_LOG=$RUN_LOG"
+    "WINRUN_APP_ID=$RUN_APP_ID"
+    "WINRUN_APP_PATH=$TARGET"
+    "WINRUN_PREFIX=$PREFIX"
+    "WINRUN_LOG=$RUN_LOG"
   )
   if [[ $DEBUG -eq 1 ]]; then
     DEBUG_ENV=("PROTON_LOG=1" "PROTON_LOG_DIR=$log_dir")
@@ -148,7 +148,7 @@ setup_run_logging() {
 
   exec > >(tee -a "$RUN_LOG") 2>&1
   printf 'Log: %s\n' "$RUN_LOG"
-  printf 'Command: proton-wrapper'
+  printf 'Command: winrun'
   printf ' %q' "${ORIGINAL_ARGS[@]}"
   printf '\n'
   printf 'App ID: %s\n' "$RUN_APP_ID"
@@ -165,8 +165,8 @@ setup_run_logging() {
 usage_en() {
   cat <<'EOF'
 Usage:
-  proton-wrapper [options] app.exe [args...]
-  proton-wrapper [-p DIR] command [args...]   run a Linux program in the prefix's separate network
+  winrun [options] app.exe [args...]
+  winrun [-p DIR] command [args...]   run a Linux program in the prefix's separate network
 
 Options:
   --init                     initialize prefix, default ~/.proton
@@ -190,30 +190,30 @@ Options:
   --mangohud                 enable MangoHud performance overlay
   --wayland                  run with Wine's Wayland driver (Proton runners, not with Gamescope)
   --netns on|off             give the prefix its own network namespace (for game accelerators), needs passt
-  --debug                    write full debug log to ~/.cache/proton-wrapper/logs
+  --debug                    write full debug log to ~/.cache/winrun/logs
   --help-full                show detailed help
 
 Examples:
-  proton-wrapper --init
-  proton-wrapper /path/to/app.exe
-  proton-wrapper --runner /path/to/proton /path/to/app.exe
-  proton-wrapper -p /path/to/prefix /path/to/app.exe
-  proton-wrapper --install we
-  proton-wrapper --install-steam we
-  proton-wrapper --download ge --version GE-Proton10-34
-  proton-wrapper --gamescope --res 1920x1080 --fps 30 --fsr /path/to/app.exe
-  proton-wrapper --debug /path/to/app.exe
-  proton-wrapper --list-version we
-  proton-wrapper --doctor
-  proton-wrapper --update
+  winrun --init
+  winrun /path/to/app.exe
+  winrun --runner /path/to/proton /path/to/app.exe
+  winrun -p /path/to/prefix /path/to/app.exe
+  winrun --install we
+  winrun --install-steam we
+  winrun --download ge --version GE-Proton10-34
+  winrun --gamescope --res 1920x1080 --fps 30 --fsr /path/to/app.exe
+  winrun --debug /path/to/app.exe
+  winrun --list-version we
+  winrun --doctor
+  winrun --update
 EOF
 }
 
 usage_zh() {
   cat <<'EOF'
 用法:
-  proton-wrapper [选项] app.exe [参数...]
-  proton-wrapper [-p 目录] 命令 [参数...]     在前置环境的独立网络里运行 Linux 程序
+  winrun [选项] app.exe [参数...]
+  winrun [-p 目录] 命令 [参数...]     在前置环境的独立网络里运行 Linux 程序
 
 选项:
   --init                     初始化，默认路径 ~/.proton
@@ -237,22 +237,22 @@ usage_zh() {
   --mangohud                 启用 MangoHud 性能叠加层
   --wayland                  以 Wayland 运行（Proton 运行器，开 Gamescope 时不生效）
   --netns on|off             给前置环境开启独立网络命名空间（加速器用），需要 passt
-  --debug                    将完整调试日志写入 ~/.cache/proton-wrapper/logs
+  --debug                    将完整调试日志写入 ~/.cache/winrun/logs
   --help-full                显示完整说明
 
 示例:
-  proton-wrapper --init
-  proton-wrapper /path/to/app.exe
-  proton-wrapper --runner /path/to/proton /path/to/app.exe
-  proton-wrapper -p /path/to/prefix /path/to/app.exe
-  proton-wrapper --install we
-  proton-wrapper --install-steam we
-  proton-wrapper --download ge --version GE-Proton10-34
-  proton-wrapper --gamescope --res 1920x1080 --fps 30 --fsr /path/to/app.exe
-  proton-wrapper --debug /path/to/app.exe
-  proton-wrapper --list-version we
-  proton-wrapper --doctor
-  proton-wrapper --update
+  winrun --init
+  winrun /path/to/app.exe
+  winrun --runner /path/to/proton /path/to/app.exe
+  winrun -p /path/to/prefix /path/to/app.exe
+  winrun --install we
+  winrun --install-steam we
+  winrun --download ge --version GE-Proton10-34
+  winrun --gamescope --res 1920x1080 --fps 30 --fsr /path/to/app.exe
+  winrun --debug /path/to/app.exe
+  winrun --list-version we
+  winrun --doctor
+  winrun --update
 EOF
 }
 
@@ -263,15 +263,15 @@ Concepts:
   runner   Proton or Wine runtime for Windows executables
 
 Run:
-  proton-wrapper app.exe [args...]
-  proton-wrapper -p ~/Games/game-prefix app.exe
-  proton-wrapper --runner /path/to/proton app.exe
+  winrun app.exe [args...]
+  winrun -p ~/Games/game-prefix app.exe
+  winrun --runner /path/to/proton app.exe
 
 Prefix tools:
-  proton-wrapper --init [-p DIR] [--runner PATH]
-  proton-wrapper --winecfg [-p DIR] [--runner PATH]
-  proton-wrapper --status [-p DIR] [--runner PATH]
-  proton-wrapper --netns on|off [-p DIR]
+  winrun --init [-p DIR] [--runner PATH]
+  winrun --winecfg [-p DIR] [--runner PATH]
+  winrun --status [-p DIR] [--runner PATH]
+  winrun --netns on|off [-p DIR]
 
 Sessions:
   Programs running in the same prefix share one Wine session. A program
@@ -280,34 +280,34 @@ Sessions:
   the session gets its own network namespace, so the TUN adapter a game
   accelerator creates there carries the programs of that prefix only.
   A Linux program (a command, not a Windows program) given instead of an
-  exe runs in that namespace as the user, e.g. "proton-wrapper steam";
+  exe runs in that namespace as the user, e.g. "winrun steam";
   with --netns off it just runs.
 
 Runner discovery:
-  proton-wrapper --list-runner
-  proton-wrapper --list-version ge|dw|we
+  winrun --list-runner
+  winrun --list-version ge|dw|we
 
 Download only:
-  proton-wrapper --download ge [-d DIR] [--version TAG]
-  proton-wrapper --download dw [-d DIR] [--version TAG]
+  winrun --download ge [-d DIR] [--version TAG]
+  winrun --download dw [-d DIR] [--version TAG]
 
 Install runner:
-  proton-wrapper --install ge [-d DIR] [--version TAG]
-  proton-wrapper --install dw [-d DIR] [--version TAG]
-  proton-wrapper --install-steam ge|dw|we
-  proton-wrapper --install-lutris ge|dw|we
+  winrun --install ge [-d DIR] [--version TAG]
+  winrun --install dw [-d DIR] [--version TAG]
+  winrun --install-steam ge|dw|we
+  winrun --install-lutris ge|dw|we
 
 Update runners:
-  proton-wrapper --update
-  proton-wrapper --check-update
+  winrun --update
+  winrun --check-update
 
 Diagnostics:
-  proton-wrapper --doctor
+  winrun --doctor
 
 Remove runner:
-  proton-wrapper --remove ge|dw|we
-  proton-wrapper --remove-steam ge|dw|we
-  proton-wrapper --remove-lutris ge|dw|we
+  winrun --remove ge|dw|we
+  winrun --remove-steam ge|dw|we
+  winrun --remove-lutris ge|dw|we
 
 Install targets:
   steam   ~/.local/share/Steam/compatibilitytools.d (default)
@@ -315,8 +315,8 @@ Install targets:
   lutris  ~/.local/share/lutris/runners/wine
 
 Environment:
-  PROTON_PREFIX     prefix path
-  PROTON_RUNNER     runner path
+  WINRUN_PREFIX     prefix path
+  WINRUN_RUNNER     runner path
   PROTON_LANG       zh|en
 EOF
 }
@@ -328,48 +328,48 @@ usage_full_zh() {
   runner   运行器 (Proton 或 Wine)
 
 运行:
-  proton-wrapper app.exe [参数...]
-  proton-wrapper -p ~/Games/game-prefix app.exe
-  proton-wrapper --runner /path/to/proton app.exe
+  winrun app.exe [参数...]
+  winrun -p ~/Games/game-prefix app.exe
+  winrun --runner /path/to/proton app.exe
 
 前置环境:
-  proton-wrapper --init [-p 目录] [--runner 路径]
-  proton-wrapper --winecfg [-p 目录] [--runner 路径]
-  proton-wrapper --status [-p 目录] [--runner 路径]
-  proton-wrapper --netns on|off [-p 目录]
+  winrun --init [-p 目录] [--runner 路径]
+  winrun --winecfg [-p 目录] [--runner 路径]
+  winrun --status [-p 目录] [--runner 路径]
+  winrun --netns on|off [-p 目录]
 
 会话:
   同一个前置环境里同时运行的程序共用一个 Wine 会话。前置环境里已有程序在运行时，
   新程序会直接加入，并沿用会话的运行器、显示方式（X11、Wayland 或 Gamescope）和网络。
   开启 --netns 后会话有独立的网络命名空间，加速器在里面建立的虚拟网卡只接管这个前置环境里的程序。
-  把 exe 换成 Linux 程序（命令），它会以当前用户在这个命名空间里运行，例如 proton-wrapper steam；
+  把 exe 换成 Linux 程序（命令），它会以当前用户在这个命名空间里运行，例如 winrun steam；
   没开 --netns 时直接运行。
 
 运行器发现:
-  proton-wrapper --list-runner
-  proton-wrapper --list-version ge|dw|we
+  winrun --list-runner
+  winrun --list-version ge|dw|we
 
 只下载:
-  proton-wrapper --download ge [-d 目录] [--version 标签]
-  proton-wrapper --download dw [-d 目录] [--version 标签]
+  winrun --download ge [-d 目录] [--version 标签]
+  winrun --download dw [-d 目录] [--version 标签]
 
 安装运行器:
-  proton-wrapper --install ge [-d 目录] [--version 标签]
-  proton-wrapper --install dw [-d 目录] [--version 标签]
-  proton-wrapper --install-steam ge|dw|we
-  proton-wrapper --install-lutris ge|dw|we
+  winrun --install ge [-d 目录] [--version 标签]
+  winrun --install dw [-d 目录] [--version 标签]
+  winrun --install-steam ge|dw|we
+  winrun --install-lutris ge|dw|we
 
 更新运行器:
-  proton-wrapper --update
-  proton-wrapper --check-update
+  winrun --update
+  winrun --check-update
 
 诊断:
-  proton-wrapper --doctor
+  winrun --doctor
 
 移除运行器:
-  proton-wrapper --remove ge|dw|we
-  proton-wrapper --remove-steam ge|dw|we
-  proton-wrapper --remove-lutris ge|dw|we
+  winrun --remove ge|dw|we
+  winrun --remove-steam ge|dw|we
+  winrun --remove-lutris ge|dw|we
 
 安装目标:
   steam   ~/.local/share/Steam/compatibilitytools.d（默认）
@@ -377,8 +377,8 @@ usage_full_zh() {
   lutris  ~/.local/share/lutris/runners/wine
 
 环境变量:
-  PROTON_PREFIX     前置环境路径
-  PROTON_RUNNER     运行器路径
+  WINRUN_PREFIX     前置环境路径
+  WINRUN_RUNNER     运行器路径
   PROTON_LANG       zh|en
 EOF
 }
@@ -402,7 +402,7 @@ usage_full() {
 gamescope_usage_en() {
   cat <<'EOF'
 Usage:
-  proton-wrapper --gamescope [gamescope options] app.exe [args...]
+  winrun --gamescope [gamescope options] app.exe [args...]
 
 Gamescope options:
   --windowed             run Gamescope in a window
@@ -415,14 +415,14 @@ Gamescope options:
   -h, --help             show this help
 
 Example:
-  proton-wrapper --gamescope --windowed --res 1920x1080 --fps 30 --fsr --mangohud game.exe
+  winrun --gamescope --windowed --res 1920x1080 --fps 30 --fsr --mangohud game.exe
 EOF
 }
 
 gamescope_usage_zh() {
   cat <<'EOF'
 用法:
-  proton-wrapper --gamescope [Gamescope 选项] app.exe [参数...]
+  winrun --gamescope [Gamescope 选项] app.exe [参数...]
 
 Gamescope 选项:
   --windowed             窗口模式
@@ -435,7 +435,7 @@ Gamescope 选项:
   -h, --help             显示本帮助
 
 示例:
-  proton-wrapper --gamescope --windowed --res 1920x1080 --fps 30 --fsr --mangohud game.exe
+  winrun --gamescope --windowed --res 1920x1080 --fps 30 --fsr --mangohud game.exe
 EOF
 }
 
@@ -448,7 +448,7 @@ gamescope_usage() {
 }
 
 die() {
-  printf 'proton-wrapper: %s\n' "$*" >&2
+  printf 'winrun: %s\n' "$*" >&2
   exit 1
 }
 
@@ -670,8 +670,8 @@ collect_runners() {
   local lib
   reset_runners
 
-  if [[ -n "${PROTON_RUNNER:-}" ]]; then
-    try_resolve_runner_arg "$PROTON_RUNNER" >/dev/null 2>&1 || true
+  if [[ -n "${WINRUN_RUNNER:-}" ]]; then
+    try_resolve_runner_arg "$WINRUN_RUNNER" >/dev/null 2>&1 || true
     if [[ -n "${RESOLVED_RUNNER_PATH:-}" ]]; then
       add_runner "$RESOLVED_RUNNER_TYPE" env "$RESOLVED_RUNNER_PATH"
     fi
@@ -971,7 +971,7 @@ elif product == "we":
 else:
     raise SystemExit(f"unknown product: {product}")
 
-request = urllib.request.Request(url, headers={"User-Agent": "proton-cli"})
+request = urllib.request.Request(url, headers={"User-Agent": "winrun"})
 try:
     with urllib.request.urlopen(request, timeout=30) as response:
         data = json.load(response)
@@ -1038,7 +1038,7 @@ else:
 # WE-Proton releases also carry <tag>-source.tar.xz, the patched sources
 excluded_suffixes = ("-source.tar.xz",)
 
-request = urllib.request.Request(url, headers={"User-Agent": "proton-cli"})
+request = urllib.request.Request(url, headers={"User-Agent": "winrun"})
 try:
     with urllib.request.urlopen(request, timeout=30) as response:
         data = json.load(response)
@@ -1091,7 +1091,7 @@ fetch_file() {
     timeout_prefix=(timeout "${DOWNLOAD_TIMEOUT_SECONDS}s")
   fi
   product="${DOWNLOAD_NOTIFY_PRODUCT:-$(basename "$dest")}"
-  title="Proton Wrapper"
+  title="WinRun"
   status=0
   if command -v curl >/dev/null 2>&1; then
     run_download_command_with_notifications "$title" "$product" "${timeout_prefix[@]}" \
@@ -1135,7 +1135,7 @@ notify_can_replace() {
 
 notify_send() {
   local urgency="$1" expire="$2" title="$3" message="$4" id
-  local args=(--app-name="Proton Wrapper" --app-icon=proton-wrapper --icon=proton-wrapper --urgency="$urgency")
+  local args=(--app-name="WinRun" --app-icon=winrun --icon=winrun --urgency="$urgency")
   notify_available || return 0
   [[ -n "$expire" ]] && args+=(--expire-time="$expire")
   if notify_can_replace; then
@@ -1160,14 +1160,14 @@ notify_download() {
 # Errors must survive a desktop launch, where stderr goes nowhere. Critical
 # urgency keeps the notification on screen until it is dismissed.
 notify_error() {
-  notify_send critical "" "Proton Wrapper" "$1"
+  notify_send critical "" "WinRun" "$1"
 }
 
 # Record a failure reason and report it, without killing the caller: the
 # caller still has to notify the user and clean up.
 install_error() {
   INSTALL_ERROR="$*"
-  printf 'proton-wrapper: %s\n' "$*" >&2
+  printf 'winrun: %s\n' "$*" >&2
 }
 
 die_visible() {
@@ -1244,7 +1244,7 @@ run_download_command_with_notifications() {
 install_runner_with_notifications() {
   local product title message status old_product log_dir
   product="$(runner_dir_name "$(normalize_product "$PRODUCT")")"
-  title="Proton Wrapper"
+  title="WinRun"
   old_product="${DOWNLOAD_NOTIFY_PRODUCT:-}"
   DOWNLOAD_NOTIFY_PRODUCT="$product"
   INSTALL_ERROR=""
@@ -1333,8 +1333,8 @@ find_extracted_runner_root() {
 installed_runner_version() {
   local target="$1" product="$2" line version
 
-  if [[ -r "$target/.proton-wrapper-version" ]]; then
-    sed -n '1p' "$target/.proton-wrapper-version"
+  if [[ -r "$target/.winrun-version" ]]; then
+    sed -n '1p' "$target/.winrun-version"
     return 0
   fi
 
@@ -1418,7 +1418,7 @@ install_runner() {
   dir_name="$(runner_target_dir_name "$product" "$VERSION" "$tag")"
   target="$install_dir/$dir_name"
   product_name="$(runner_dir_name "$product")"
-  title="Proton Wrapper"
+  title="WinRun"
 
   mkdir -p "$download_dir" "$install_dir"
   find "$download_dir" -maxdepth 1 -type d \( -name 'install-*' -o -name 'partial-*' \) -mmin +1440 -exec rm -rf {} + 2>/dev/null || true
@@ -1502,7 +1502,7 @@ Close the programs running with it, then update again."
     install_error "failed to install runner to: $target"
     return 1
   fi
-  printf '%s\n' "$tag" > "$target/.proton-wrapper-version"
+  printf '%s\n' "$tag" > "$target/.winrun-version"
   if [[ "$VERSION" == "latest" ]]; then
     pin_runner_tool_name "$target" "$product_name" "$tag"
   fi
@@ -1684,7 +1684,7 @@ remove_all_runners() {
 
   shopt -s nullglob
   for path in "$install_dir"/*; do
-    if [[ -d "$path" && -f "$path/.proton-wrapper-version" ]]; then
+    if [[ -d "$path" && -f "$path/.winrun-version" ]]; then
       rm -rf "$path"
       removed=1
       if [[ "$lang" == "zh" ]]; then
@@ -1698,9 +1698,9 @@ remove_all_runners() {
 
   if [[ $removed -eq 0 ]]; then
     if [[ "$lang" == "zh" ]]; then
-      die "没有找到由 proton-wrapper 安装的运行器: $install_dir"
+      die "没有找到由 winrun 安装的运行器: $install_dir"
     else
-      die "no runners installed by proton-wrapper found in: $install_dir"
+      die "no runners installed by winrun found in: $install_dir"
     fi
   fi
 }
@@ -1825,7 +1825,7 @@ fetch_text() {
 
 # Download the runtime from Valve into $RUNTIME_DIR, checked against SHA256SUMS.
 download_runtime() {
-  local info sums expected dest staging old_product title="Proton Wrapper" status=0
+  local info sums expected dest staging old_product title="WinRun" status=0
   mapfile -t info < <(runtime_info "$1")
   mkdir -p "$INSTALL_DOWNLOAD_DIR" "$RUNTIME_DIR"
   if ! sums="$(fetch_text "${info[2]}SHA256SUMS")"; then
@@ -1888,7 +1888,7 @@ prepare_runtime() {
     download_runtime "$appid" > >(tee -a "$log" >&2) 2>&1 || status=$?
     if [[ $status -ne 0 ]] || ! runtime="$(find_runtime "$appid")"; then
       notify_error "$(download_message runtime_fallback "")"$'\n'"${INSTALL_ERROR:+$INSTALL_ERROR$'\n'}$log"
-      printf 'proton-wrapper: %s\n' "$(download_message runtime_fallback "")" >&2
+      printf 'winrun: %s\n' "$(download_message runtime_fallback "")" >&2
       return 0
     fi
   fi
@@ -1982,7 +1982,7 @@ static int find_overlay(struct dl_phdr_info *info, size_t size, void *data)
 
 static long overlay_uid(void)
 {
-    const char *value = getenv("PROTON_WRAPPER_OVERLAY_UID");
+    const char *value = getenv("WINRUN_OVERLAY_UID");
     long uid = 0;
 
     if (!value || !*value)
@@ -2040,7 +2040,7 @@ prepare_overlay_uid() {
   fi
   OVERLAY_UID_ENV=(
     "LD_PRELOAD=$LD_PRELOAD$(printf ':%s' "${libs[@]}")"
-    "PROTON_WRAPPER_OVERLAY_UID=$(host_uid)"
+    "WINRUN_OVERLAY_UID=$(host_uid)"
   )
 }
 
@@ -2165,7 +2165,7 @@ build_launch_command() {
     # game is left to be found by its app ID, as when Steam runs it
     umu_env=()
     if [[ $STEAM_LAUNCH -eq 0 ]]; then
-      umu_env=(UMU_ID="${UMU_ID:-proton-wrapper}" UMU_USE_STEAM="${UMU_USE_STEAM:-0}")
+      umu_env=(UMU_ID="${UMU_ID:-winrun}" UMU_USE_STEAM="${UMU_USE_STEAM:-0}")
     fi
     LAUNCH_CMD+=(env "${env_args[@]}"
       STEAM_COMPAT_DATA_PATH="$PREFIX"
@@ -2205,7 +2205,7 @@ run_wine_command() {
 # lock until the program is safely part of the session, so two programs
 # started at once never set up two sessions.
 
-SESSION_ROOT="${XDG_RUNTIME_DIR:-/tmp/proton-wrapper-$(id -u)}/proton-wrapper/sessions"
+SESSION_ROOT="${XDG_RUNTIME_DIR:-/tmp/winrun-$(id -u)}/winrun/sessions"
 SESSION_LOCK_FD=""
 SESSION_SETTLE=""
 SESSION_NETNS=""
@@ -2262,12 +2262,12 @@ session_message() {
 }
 
 notify_info() {
-  notify_send normal "$DOWNLOAD_NOTIFY_EXPIRE" "Proton Wrapper" "$1"
+  notify_send normal "$DOWNLOAD_NOTIFY_EXPIRE" "WinRun" "$1"
 }
 
 # Settings of the prefix itself, next to its pfx.
 prefix_conf_file() {
-  printf '%s/.proton-wrapper.conf\n' "$PREFIX"
+  printf '%s/.winrun.conf\n' "$PREFIX"
 }
 
 prefix_netns_enabled() {
@@ -2432,8 +2432,8 @@ session_start() {
   # range; the Steam client's 57343, in it, the keeper forwards itself while
   # the host's Steam runs. A game Steam starts brings Steam's overlay in
   # LD_PRELOAD, which the namespace's own programs must not get.
-  setsid env -u PROTON_WRAPPER_APP_ID -u PROTON_WRAPPER_APP_PATH -u PROTON_WRAPPER_LOG -u LD_PRELOAD \
-    PROTON_WRAPPER_PREFIX="$PREFIX" \
+  setsid env -u WINRUN_APP_ID -u WINRUN_APP_PATH -u WINRUN_LOG -u LD_PRELOAD \
+    WINRUN_PREFIX="$PREFIX" \
     pasta --config-net --ns-mac-addr "$mac" -T auto -f "${pidns[@]}" -- "$SELF_PATH" --session-keeper "$dir" \
     >> "$log" 2>&1 < /dev/null {SESSION_LOCK_FD}>&- &
   for ((i = 0; i < 75; i++)); do
@@ -2595,7 +2595,7 @@ session_prepare() {
       SESSION_ENV+=("DBUS_SESSION_BUS_ADDRESS=unix:path=$dir/bus")
     fi
   fi
-  SESSION_ENV+=("PROTON_WRAPPER_LAUNCH=$LAUNCH_TOKEN")
+  SESSION_ENV+=("WINRUN_LAUNCH=$LAUNCH_TOKEN")
 
   if [[ $WAYLAND -eq 1 && $GAMESCOPE -eq 0 && -z "${WAYLAND_DISPLAY:-}" ]]; then
     WAYLAND=0
@@ -2616,7 +2616,7 @@ session_prepare() {
 
 # Whether a process of this launch has entered the session's namespace.
 session_token_in_netns() {
-  python3 - "$SESSION_NETNS" "PROTON_WRAPPER_LAUNCH=$LAUNCH_TOKEN" <<'PY'
+  python3 - "$SESSION_NETNS" "WINRUN_LAUNCH=$LAUNCH_TOKEN" <<'PY'
 import os
 import sys
 
@@ -2705,7 +2705,7 @@ init_prefix() {
   # launch looks dead between the runner install and the program window.
   log="$WRAPPER_CACHE_DIR/logs/init.log"
   mkdir -p "$(dirname "$log")"
-  notify_progress "Proton Wrapper" "$(download_message init "")"
+  notify_progress "WinRun" "$(download_message init "")"
 
   status=0
   if [[ "$RESOLVED_RUNNER_TYPE" == "proton" ]]; then
@@ -2758,7 +2758,7 @@ PY
 
 association_cache_file_for() {
   local target_path="$1" cache_dir key
-  cache_dir="$XDG_CACHE_HOME_VALUE/proton-wrapper/associations"
+  cache_dir="$XDG_CACHE_HOME_VALUE/winrun/associations"
   key="$(printf '%s' "$target_path" | sha256sum | cut -d ' ' -f 1)"
   printf '%s/%s.conf\n' "$cache_dir" "$key"
 }
@@ -2902,13 +2902,13 @@ open_winecfg() {
 
 # Windows programs outside the prefix start from a drive letter for their
 # folder. Each folder keeps its own letter, recorded in
-# .proton-wrapper-drives, so programs of different folders can run at
+# .winrun-drives, so programs of different folders can run at
 # the same time without a drive being pointed elsewhere under one of them.
 # s: and t: stay out: Proton's "run" deletes them unless a game asks for them.
 DRIVE_LETTERS="d e f g h i j k l m n o p q r u v w x y"
 
 drive_map_file() {
-  printf '%s/.proton-wrapper-drives\n' "$PREFIX"
+  printf '%s/.winrun-drives\n' "$PREFIX"
 }
 
 drive_map_has() {
@@ -2963,7 +2963,7 @@ steam_install_folder() {
 
 # The single letter used before every folder got its own.
 migrate_drive_marker() {
-  local marker="$PREFIX/.proton-wrapper-drive" letter link
+  local marker="$PREFIX/.winrun-drive" letter link
   [[ -e "$marker" ]] || return 0
   letter="$(sed -n '1p' "$marker" 2> /dev/null || true)"
   link="$PREFIX/pfx/dosdevices/$letter:"
@@ -3049,7 +3049,7 @@ prepare_mapped_drive_target() {
 
 # Steam's %command% for a game it runs with Proton: its launch helpers and
 # runtime, the proton script with a verb, then the game and its arguments.
-# With "proton-wrapper %command%" as a game's launch option, the game
+# With "winrun %command%" as a game's launch option, the game
 # alone runs, the way any program does here: in the wrapper's prefix and its
 # session, so it shares them with what else runs there, an accelerator say.
 take_steam_command() {
@@ -3218,7 +3218,7 @@ runtime_status() {
   if [[ "$type" != "proton" ]]; then
     printf 'not used (wine runner)\n'
   elif [[ "$RUNTIME_ENABLED" == 0 ]]; then
-    printf 'off (PROTON_WRAPPER_RUNTIME=0)\n'
+    printf 'off (WINRUN_RUNTIME=0)\n'
   elif ! appid="$(required_runtime_appid "$runner")" || ! runtime_info "$appid" >/dev/null; then
     printf 'not used (the runner asks for none)\n'
   elif runner_is_old_weproton "$runner"; then
@@ -3376,7 +3376,7 @@ run_doctor() {
   old_runner_type="$RESOLVED_RUNNER_TYPE"
   old_runner_path="$RESOLVED_RUNNER_PATH"
 
-  printf 'Proton Wrapper doctor\n'
+  printf 'WinRun doctor\n'
   printf '\nCommands:\n'
   doctor_command "python3" python3
   doctor_command "curl" curl
@@ -3435,7 +3435,7 @@ run_doctor() {
     default_runner_detail="$RESOLVED_RUNNER_TYPE"
     doctor_status "default runner" ok "$default_runner_detail · $default_runner"
   else
-    doctor_status "default runner" missing "run proton-wrapper --install $DEFAULT_PRODUCT"
+    doctor_status "default runner" missing "run winrun --install $DEFAULT_PRODUCT"
   fi
 
   printf '\nPrefix:\n'
@@ -4236,7 +4236,7 @@ def until_fcitx_serves(display, open_display):
                 x11.XCloseDisplay(dpy)
                 return
             time.sleep(0.1)
-    print(f"proton-wrapper: fcitx5 did not take {display}", file=sys.stderr)
+    print(f"winrun: fcitx5 did not take {display}", file=sys.stderr)
     x11.XCloseDisplay(dpy)
 
 
@@ -4249,7 +4249,7 @@ def follow_input_method(display):
         from gi.repository import Gio, GLib
         bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
     except Exception as exc:  # no gi, no bus
-        print(f"proton-wrapper: no input method in gamescope: {exc}", file=sys.stderr)
+        print(f"winrun: no input method in gamescope: {exc}", file=sys.stderr)
         return False
 
     def open_display():
@@ -4257,7 +4257,7 @@ def follow_input_method(display):
             bus.call_sync("org.fcitx.Fcitx5", "/controller", "org.fcitx.Fcitx.Controller1", "OpenX11Connection",
                           GLib.Variant("(s)", (display,)), None, Gio.DBusCallFlags.NO_AUTO_START, 5000, None)
         except GLib.Error as exc:  # e.g. an fcitx5 without the method
-            print(f"proton-wrapper: fcitx5 cannot serve {display}: {exc.message}", file=sys.stderr)
+            print(f"winrun: fcitx5 cannot serve {display}: {exc.message}", file=sys.stderr)
 
     def owner_changed(_bus, _sender, _path, _interface, _signal, parameters):
         if parameters.unpack()[2]:  # a new fcitx5 knows nothing about this display

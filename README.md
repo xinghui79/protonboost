@@ -1,39 +1,49 @@
-# proton-wrapper
+# WinRun
 
-本地维护的分支：在上游开源项目基础上移除作者标识并更名，运行逻辑未改动。
+本地独立维护的 Windows 程序运行器：用 Proton/Wine 运行 exe，开箱即用；支持独立网络
+（配合游戏加速器）、同前缀会话共享和图形管理器。基于开源项目重构更名，运行逻辑保持一致。
 
-## 功能
-
-- 双击直接运行 Windows exe（Proton/Wine），首次运行自动初始化 `~/.proton` 前置环境
-- 独立网络（`--netns on`）：前置环境的程序运行在独立的网络命名空间里，配合 Windows
-  版加速器（网易 UU「路由模式」/ 雷神「模式三」）加速游戏；Linux 程序也能放进同一网络，
-  例如 `proton-wrapper steam`
-- 运行器管理：`--list-runner` `--install ge|dw|we` `--update` `--doctor`
-- 图形管理器：`proton-wrapper-manager`（应用列表 / 进程 / 配置）
-
-## 本地安装（用户级，无需 sudo）
+## 项目结构
 
 ```
-install -Dm755 -t ~/.local/bin proton-wrapper proton-wrapper-configure proton-wrapper-manager
-install -Dm644 -t ~/.local/share/applications *.desktop
-install -Dm644 icons/proton-wrapper.png ~/.local/share/icons/hicolor/512x512/apps/proton-wrapper.png
-update-desktop-database ~/.local/share/applications
+bin/winrun                     主程序（bash）
+bin/winrun-configure           「设置 Windows 程序运行环境」
+bin/winrun-manager             图形管理器（GTK4）
+share/applications/            桌面文件（右键打开方式 / 管理器入口）
+icons/winrun.svg|.png          图标
+install.sh                     安装 / 卸载脚本
+```
+
+## 安装（用户级，无需 sudo）
+
+```
+./install.sh                # 安装到 ~/.local
+./install.sh install ~/.opt # 自定义 PREFIX
+./install.sh uninstall      # 卸载
 ```
 
 ## 常用命令
 
 ```
-proton-wrapper --doctor          # 诊断
-proton-wrapper --status          # 前置环境 / 会话状态
-proton-wrapper --netns on|off    # 开关独立网络
-proton-wrapper 程序.exe          # 运行 Windows 程序
-proton-wrapper steam             # 把 Steam 放进独立网络（先退出已开的 Steam）
+winrun 程序.exe             # 运行 Windows 程序（首次自动初始化 ~/.proton 前置环境）
+winrun steam                # 把 Linux 程序放进独立网络（先退出已开的 Steam）
+winrun --status             # 前置环境 / 会话状态
+winrun --doctor             # 环境诊断
+winrun --netns on|off       # 开关独立网络
+winrun-manager              # 图形管理器
 ```
 
-Steam 游戏启动选项填 `proton-wrapper %command%`（游戏兼容性仍需选一个 Proton）。
+Steam 游戏启动选项填 `winrun %command%`（游戏兼容性仍需选一个 Proton）。
 
-## 维护
+## 独立网络（游戏加速）
 
-本分支为本地独立维护版，与原作者无关。WE-Proton 运行器的在线安装/更新功能已移除，
-更新时手动下载发布包并解压到 `~/.local/share/Steam/compatibilitytools.d/WE-Proton Latest`；
-GE / DW 运行器仍可用 `proton-wrapper --install ge|dw` 在线安装与更新。
+`winrun --netns on` 后，前置环境里的程序运行在独立的网络命名空间。把 Windows 版
+加速器（网易 UU「路由模式」/ 雷神「模式三」）和游戏装进同一前置环境即可加速；
+Linux 程序也能放进同一网络（`winrun steam`）。依赖 `passt`，运行器需 WE-Proton
+（内置 wintun）。
+
+## 维护说明
+
+本地独立维护。WE-Proton 运行器的在线安装/更新功能已移除，更新时手动解压到
+`~/.local/share/Steam/compatibilitytools.d/WE-Proton Latest`；GE / DW 运行器
+仍可用 `winrun --install ge|dw` 在线安装与更新。

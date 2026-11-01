@@ -36,7 +36,7 @@ def is_zh() -> bool:
 
 ZH = is_zh()
 TEXT = {
-    "title": "Proton Wrapper 管理器" if ZH else "Proton Wrapper Manager",
+    "title": "WinRun 管理器" if ZH else "WinRun Manager",
     "prefix": "前置环境" if ZH else "Prefix",
     "runner": "运行器" if ZH else "Runner",
     "program_args": "启动参数" if ZH else "Launch arguments",
@@ -149,23 +149,23 @@ def data_home() -> Path:
 
 
 def association_dir() -> Path:
-    return cache_home() / "proton-wrapper" / "associations"
+    return cache_home() / "winrun" / "associations"
 
 
 def gui_icon_dir() -> Path:
-    return cache_home() / "proton-wrapper" / "icons"
+    return cache_home() / "winrun" / "icons"
 
 
 def exported_icon_dir() -> Path:
-    return data_home() / "icons" / "proton-wrapper" / "apps"
+    return data_home() / "icons" / "winrun" / "apps"
 
 
 def exported_app_dir() -> Path:
-    return data_home() / "applications" / "proton-wrapper"
+    return data_home() / "applications" / "winrun"
 
 
 def run_log_root() -> Path:
-    return cache_home() / "proton-wrapper" / "logs"
+    return cache_home() / "winrun" / "logs"
 
 
 def app_log_dir(app_id: str) -> Path:
@@ -205,7 +205,7 @@ def read_key_values(path: Path) -> dict[str, str]:
 
 
 def collect_prefixes() -> list[Path]:
-    values = [expand_path(os.environ.get("PROTON_PREFIX", Path.home() / ".proton"))]
+    values = [expand_path(os.environ.get("WINRUN_PREFIX", Path.home() / ".proton"))]
     for conf in association_dir().glob("*.conf"):
         prefix = read_key_values(conf).get("prefix")
         if prefix:
@@ -294,7 +294,7 @@ def collect_running_process_prefixes() -> list[Path]:
             if not is_steam_zero_prefix(prefix):
                 key = str(prefix)
                 counts[key] = (prefix, counts.get(key, (prefix, 0))[1] + 1)
-        wrapper_prefix = env.get("PROTON_WRAPPER_PREFIX", "")
+        wrapper_prefix = env.get("WINRUN_PREFIX", "")
         if wrapper_prefix:
             prefix = expand_path(wrapper_prefix)
             key = str(prefix)
@@ -1211,7 +1211,7 @@ def icon_for_app(prefix: Path, app: dict[str, str], target_dir: Path | None = No
         if icon:
             return str(icon)
 
-    return "proton-wrapper"
+    return "winrun"
 
 
 def display_message(parent: Gtk.Window | None, title: str, message: str) -> None:
@@ -1640,8 +1640,8 @@ def scan_apps(prefix: Path) -> list[dict[str, str]]:
 def desktop_matches_app(path: Path, prefix: Path, app: dict[str, str]) -> bool:
     data = read_key_values(path)
     return (
-        data.get("X-Proton-Wrapper-ID") == app_identity(prefix, Path(app["path"]))
-        or (data.get("X-Proton-Wrapper-Prefix") == str(prefix) and data.get("X-Proton-Wrapper-Path") == app["path"])
+        data.get("X-WinRun-ID") == app_identity(prefix, Path(app["path"]))
+        or (data.get("X-WinRun-Prefix") == str(prefix) and data.get("X-WinRun-Path") == app["path"])
     )
 
 
@@ -1669,7 +1669,7 @@ def export_app(prefix: Path, app: dict[str, str], wrapper: str, display_name: st
     icon_app = dict(app)
     icon_app["display_name"] = name
     icon = icon_for_app(prefix, icon_app, icon_path.parent)
-    if icon != "proton-wrapper" and Path(icon).is_file() and Path(icon) != icon_path:
+    if icon != "winrun" and Path(icon).is_file() and Path(icon) != icon_path:
         icon_path.parent.mkdir(parents=True, exist_ok=True)
         icon_path.write_bytes(Path(icon).read_bytes())
         icon = str(icon_path)
@@ -1677,14 +1677,14 @@ def export_app(prefix: Path, app: dict[str, str], wrapper: str, display_name: st
         "[Desktop Entry]\n"
         "Type=Application\n"
         f"Name={name}\n"
-        f"Comment=Run {name} with proton-wrapper\n"
+        f"Comment=Run {name} with winrun\n"
         f"Exec={exec_line}\n"
         f"Icon={icon}\n"
         "Terminal=false\n"
         "Categories=Utility;X-Wine;\n"
-        f"X-Proton-Wrapper-ID={app_identity(prefix, lnk)}\n"
-        f"X-Proton-Wrapper-Prefix={prefix}\n"
-        f"X-Proton-Wrapper-Path={lnk}\n",
+        f"X-WinRun-ID={app_identity(prefix, lnk)}\n"
+        f"X-WinRun-Prefix={prefix}\n"
+        f"X-WinRun-Path={lnk}\n",
         encoding="utf-8",
     )
     target.chmod(0o644)
@@ -1825,7 +1825,7 @@ def scan_processes(prefix: Path) -> list[dict[str, str]]:
             matched = True
         if env.get("STEAM_COMPAT_DATA_PATH", "") == steam_data:
             matched = True
-        if env.get("PROTON_WRAPPER_PREFIX") == str(prefix):
+        if env.get("WINRUN_PREFIX") == str(prefix):
             matched = True
         if not matched:
             continue
@@ -1848,9 +1848,9 @@ def scan_processes(prefix: Path) -> list[dict[str, str]]:
             "name": name,
             "command": command or name,
             "age": process_start_time(pid),
-            "app_id": env.get("PROTON_WRAPPER_APP_ID", ""),
-            "app_path": env.get("PROTON_WRAPPER_APP_PATH", ""),
-            "log": env.get("PROTON_WRAPPER_LOG", ""),
+            "app_id": env.get("WINRUN_APP_ID", ""),
+            "app_path": env.get("WINRUN_APP_PATH", ""),
+            "log": env.get("WINRUN_LOG", ""),
         })
     return sorted(result, key=lambda item: int(item["pid"]))
 
@@ -1889,7 +1889,7 @@ def preferred_runner_path(runners: list[dict[str, str]]) -> str:
 
 def prefix_netns_enabled(prefix: Path) -> bool:
     try:
-        return "netns=1" in (prefix / ".proton-wrapper.conf").read_text(errors="ignore").splitlines()
+        return "netns=1" in (prefix / ".winrun.conf").read_text(errors="ignore").splitlines()
     except OSError:
         return False
 
@@ -2047,7 +2047,7 @@ def set_image_icon(image: Gtk.Image, icon: str) -> None:
     if icon and os.path.isabs(icon):
         image.set_from_file(icon)
     else:
-        image.set_from_icon_name(icon or "proton-wrapper")
+        image.set_from_icon_name(icon or "winrun")
 
 
 class IconLoader:
@@ -2079,7 +2079,7 @@ class IconLoader:
             try:
                 icon = icon_for_app(prefix, app)
             except Exception:
-                icon = "proton-wrapper"
+                icon = "winrun"
             GLib.idle_add(self.found, key, icon)
 
     def found(self, key: tuple, icon: str) -> bool:
@@ -2091,9 +2091,9 @@ class IconLoader:
 
 class ManagerApp(Gtk.Application):
     def __init__(self):
-        super().__init__(application_id="io.github.protonwrapper.proton_wrapper_manager")
-        self.wrapper = resolve_sibling("proton-wrapper")
-        self.configure = resolve_sibling("proton-wrapper-configure")
+        super().__init__(application_id="io.github.winrun.winrun_manager")
+        self.wrapper = resolve_sibling("winrun")
+        self.configure = resolve_sibling("winrun-configure")
         self.window = None
         self.prefixes: list[Path] = []
         self.apps_prefix_combo = None
@@ -2546,7 +2546,7 @@ class ManagerApp(Gtk.Application):
         if icon and Path(icon).is_file():
             image = Gtk.Image.new_from_file(icon)
         else:
-            image = Gtk.Image.new_from_icon_name(icon or "proton-wrapper")
+            image = Gtk.Image.new_from_icon_name(icon or "winrun")
         image.set_pixel_size(36)
         image.add_css_class("app-icon")
         return image
