@@ -57,8 +57,11 @@ fn main() {
 
     // 调试：直接输出扫描结果
     if let Some(pos) = args.iter().position(|arg| arg == "--dump-scan") {
-        let prefix = args.get(pos + 1).cloned().unwrap_or_default();
-        let path = core::paths::expand_path(&prefix);
+        // 不带参数就看默认前缀
+        let path = match args.get(pos + 1) {
+            Some(value) if !value.starts_with("--") => core::paths::expand_path(value),
+            _ => core::paths::default_prefix(),
+        };
         println!("prefix: {}", path.to_string_lossy());
         println!("shortcut roots:");
         for (source, root) in core::scan::shortcut_roots(&path) {
