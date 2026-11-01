@@ -24,8 +24,9 @@ pub fn default_prefix() -> PathBuf {
             return expand_path(value);
         }
     }
+    // 老位置：只有它确实是给 Wine 用的前缀才沿用，免得一个空的 ~/.proton 把默认值劫走
     let legacy = home().join(".proton");
-    if legacy.is_dir() {
+    if legacy.join("pfx").is_dir() || legacy.join("drive_c").is_dir() {
         return legacy;
     }
     data_home().join("winrun/proton")

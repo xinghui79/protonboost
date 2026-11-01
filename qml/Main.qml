@@ -162,6 +162,8 @@ ApplicationWindow {
 
     Shortcut { sequence: "Ctrl+F"; onActivated: root.searchFocusTick++ }
     Shortcut { sequence: "Ctrl+R"; onActivated: root.refreshCurrent() }
+    Shortcut { sequence: "Ctrl+Q"; onActivated: backend.quit_app() }
+    Shortcut { sequence: "Ctrl+W"; onActivated: root.closeWindow() }
     Shortcut { sequence: "Ctrl+1"; onActivated: root.switchPage(0) }
     Shortcut { sequence: "Ctrl+2"; onActivated: root.switchPage(1) }
     Shortcut { sequence: "Ctrl+3"; onActivated: root.switchPage(2) }
@@ -561,7 +563,7 @@ ApplicationWindow {
                     hoverEnabled: true
                     onClicked: {
                         if (light.action === "close") {
-                            if (root.configureMode) Qt.quit(); else root.hide()
+                            root.closeWindow()
                         } else if (light.action === "min") {
                             root.showMinimized()
                         } else {
@@ -645,10 +647,7 @@ ApplicationWindow {
 
             CaptionButton { kind: "min"; onClicked: root.showMinimized() }
             CaptionButton { kind: "max"; onClicked: root.toggleMaximized() }
-            CaptionButton {
-                kind: "close"
-                onClicked: { if (root.configureMode) Qt.quit(); else root.hide() }
-            }
+            CaptionButton { kind: "close"; onClicked: root.closeWindow() }
         }
 
         Rectangle {
@@ -656,6 +655,14 @@ ApplicationWindow {
             width: parent.width
             height: 1
             color: c.line
+        }
+    }
+
+    function closeWindow() {
+        if (root.configureMode || !backend.tray_available) {
+            backend.quit_app()
+        } else {
+            root.hide()
         }
     }
 

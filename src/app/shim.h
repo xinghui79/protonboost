@@ -17,6 +17,7 @@ bool winrun_icon_convert(const QString &source, const QString &target, int max_s
 // 桌面图标名（freedesktop 主题）→ PNG
 bool winrun_theme_icon(const QString &name, const QString &target, int size);
 
+bool winrun_tray_available();
 void winrun_tray_create(const QString &iconPath, rust::Fn<void()> on_open, rust::Fn<void()> on_quit);
 void winrun_tray_set_menu_title(const QString &open, const QString &quit);
 void winrun_tray_cleanup();

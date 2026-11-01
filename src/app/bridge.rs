@@ -58,6 +58,7 @@ pub mod ffi {
         #[qproperty(QList_QVariant, config_resolutions)]
         #[qproperty(QList_QVariant, config_fps)]
         #[qproperty(bool, netns)]
+        #[qproperty(bool, tray_available)]
         #[qproperty(QString, exes_title)]
         #[qproperty(QList_QVariant, exes_items)]
         #[qproperty(QString, uiEvents)]
@@ -162,6 +163,9 @@ pub mod ffi {
 
         // 事件总线：uiEvents 属性值是待处理事件名（CSV），QML 处理完调 clearUiEvents
         #[qinvokable]
+        fn quit_app(self: Pin<&mut Backend>);
+
+        #[qinvokable]
         fn clear_ui_events(self: Pin<&mut Backend>);
     }
 }
@@ -190,6 +194,8 @@ pub struct BackendRust {
     update_available: bool,
     update_details: QString,
     netns: bool,
+    tray_available: bool,
+    tray_checked: bool,
     config_entry: QMap_QString_QVariant,
     config_icon: QString,
     config_runners: QList_QVariant,
@@ -318,6 +324,11 @@ impl ffi::Backend {
         if !self.as_mut().rust().zh {
             self.as_mut().set_zh(crate::core::loc::zh());
         }
+        if !self.as_mut().rust().tray_checked {
+            self.as_mut().rust_mut().tray_checked = true;
+            self.as_mut().set_tray_available(crate::shim_bridge::tray_available());
+        }
+
         // 状态栏 4 秒后自动清空
         if self.as_mut().rust_mut().status_deadline_ms != 0 && now_ms() > self.as_mut().rust_mut().status_deadline_ms {
             self.as_mut().rust_mut().status_deadline_ms = 0;
@@ -1189,6 +1200,10 @@ impl ffi::Backend {
         }
         self.as_mut().set_status(QString::from(if zh { "更新中..." } else { "Updating..." }));
         jobs::send(Job::UpdateRun);
+    }
+
+    pub fn quit_app(self: Pin<&mut Self>) {
+        let _ = jobs::events().send(Event::Quit);
     }
 
     pub fn clear_ui_events(mut self: Pin<&mut Self>) {

@@ -80,6 +80,10 @@ QSystemTrayIcon *icon = nullptr;
 QMenu *menu = nullptr;
 } // namespace winrun_tray
 
+bool winrun_tray_available() {
+    return QSystemTrayIcon::isSystemTrayAvailable();
+}
+
 void winrun_tray_create(const QString &iconPath, rust::Fn<void()> on_open, rust::Fn<void()> on_quit) {
     winrun_tray::on_open = [on_open]() { on_open(); };
     winrun_tray::on_quit = [on_quit]() { on_quit(); };

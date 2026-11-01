@@ -30,6 +30,9 @@ pub mod ffi {
         #[rust_name = "theme_icon"]
         fn winrun_theme_icon(name: &QString, target: &QString, size: i32) -> bool;
 
+        #[rust_name = "tray_available"]
+        fn winrun_tray_available() -> bool;
+
         #[rust_name = "tray_create"]
         fn winrun_tray_create(
             icon_path: &QString,
@@ -50,5 +53,6 @@ pub mod ffi {
 
 pub use ffi::{
     app_exec, app_new, app_quit, grab_windows, icon_convert, log_bridge, set_window_icon, theme_icon,
+    tray_available,
     tray_cleanup, tray_create, tray_set_menu_title,
 };
