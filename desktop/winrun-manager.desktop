@@ -1,8 +1,8 @@
 [Desktop Entry]
 Type=Application
-Name=WinRun Manager
-Name[zh_CN]=WinRun 管理器
-Comment=Manage Proton prefixes, Windows shortcuts, processes, and saved configs
+Name=WinRun
+Name[zh_CN]=WinRun
+Comment=Run Windows programs with Proton / Wine
 Exec=winrun-manager
 Icon=winrun
 Terminal=false

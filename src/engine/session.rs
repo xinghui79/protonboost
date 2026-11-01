@@ -115,8 +115,6 @@ pub struct Session {
 }
 
 pub enum SessionError {
-    NetnsBusy,
-    NetnsOrphan,
     NoPasta,
     NoNsenter,
     KeeperFailed(String),
@@ -125,10 +123,6 @@ pub enum SessionError {
 impl SessionError {
     pub fn message(&self, zh: bool) -> String {
         match (self, zh) {
-            (SessionError::NetnsBusy, true) => "这个前置环境里有程序正在普通网络中运行，独立网络要等它们全部关闭后才生效。".into(),
-            (SessionError::NetnsBusy, false) => "Programs of this prefix run on the normal network; close them first.".into(),
-            (SessionError::NetnsOrphan, true) => "这个前置环境的独立网络会话已经断了，请先在进程页强制关闭它的进程。".into(),
-            (SessionError::NetnsOrphan, false) => "This prefix's separate network session is gone; force close its processes first.".into(),
             (SessionError::NoPasta, true) => "这个前置环境开启了独立网络，但没有安装 passt（pasta）。".into(),
             (SessionError::NoPasta, false) => "This prefix uses a separate network, but passt (pasta) is not installed.".into(),
             (SessionError::NoNsenter, true) => "找不到 nsenter（util-linux）。".into(),
@@ -156,15 +150,37 @@ pub fn prepare(prefix: &Path, zh: bool) -> Result<Session, SessionError> {
         let host = host_netns();
         if ws_netns.is_some() && ws_netns == host {
             if want_netns {
-                return Err(SessionError::NetnsBusy);
+                // 前缀里已有程序跑在宿主网络上，那就跟着用宿主网络，别把用户挡在门外
+                session.notes.push(if zh {
+                    "这个前置环境已有程序在宿主网络运行，本次跟随它。".to_string()
+                } else {
+                    "Existing programs in this prefix run on the host network; joining them.".to_string()
+                });
             }
             keeper = None;
         } else if keeper.is_none() || netns_of(keeper.unwrap()) != ws_netns {
-            return Err(SessionError::NetnsOrphan);
+            // keeper 和 wineserver 不在同一个命名空间：状态乱了，退回宿主网络更稳妥
+            session.notes.push(if zh {
+                "独立网络会话状态不一致，本次改用宿主网络。".to_string()
+            } else {
+                "The isolated network session is inconsistent; using the host network.".to_string()
+            });
+            keeper = None;
         }
         session.verb = "run".into();
     } else if keeper.is_none() && want_netns {
-        keeper = Some(start_keeper(&dir, prefix)?);
+        match start_keeper(&dir, prefix) {
+            Ok(pid) => keeper = Some(pid),
+            Err(err) => {
+                // 独立网络起不来（没装 pasta、缺 /dev/net/tun 等）不该让程序彻底跑不了：
+                // 退回宿主网络继续跑，并把原因说清楚。
+                session.notes.push(if zh {
+                    format!("独立网络没起来（{}），已改用宿主网络。", err.message(true))
+                } else {
+                    format!("Isolated network unavailable ({}); using the host network.", err.message(false))
+                });
+            }
+        }
     }
 
     if let Some(keeper) = keeper {
@@ -458,8 +474,8 @@ pub fn keeper_main(dir: &Path) -> ! {
     }
     println!("session up: {} ({})", netns, prefix.display());
 
-    let started = Instant::now();
     let mut seen = false;
+    let mut empty_since: Option<Instant> = None;
     loop {
         if STOP.load(Ordering::SeqCst) {
             cleanup(dir);
@@ -468,10 +484,21 @@ pub fn keeper_main(dir: &Path) -> ! {
         std::thread::sleep(Duration::from_secs(1));
         if processes_in_namespace(&netns) > 0 {
             seen = true;
+            empty_since = None;
             continue;
         }
-        // 刚建好的会话给启动方一分钟时间进来
-        if !seen && started.elapsed() < Duration::from_secs(60) {
+        // pasta 自己短暂出现在命名空间里会让 seen 提前为真，
+        // 所以这里记的是「连续空了多久」，而不是「有没有见过进程」。
+        let idle = match empty_since {
+            Some(since) => since.elapsed(),
+            None => {
+                empty_since = Some(Instant::now());
+                Duration::ZERO
+            }
+        };
+        // 刚建好的会话给启动方一分钟；之后陆续有程序进来时留 15 秒空闲宽限
+        let grace = if !seen { Duration::from_secs(60) } else { Duration::from_secs(15) };
+        if idle < grace {
             continue;
         }
         let Some(lock) = hold_session_lock(dir) else {
