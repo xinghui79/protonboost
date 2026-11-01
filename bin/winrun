@@ -103,17 +103,17 @@ if [[ -z "${WINRUN_LIB_DIR:-}" || ! -d "$WINRUN_LIB_DIR" ]]; then
   exit 1
 fi
 
-source "$WINRUN_LIB_DIR/10-core.sh"   # locale, debug/run logging, app id
-source "$WINRUN_LIB_DIR/20-usage.sh"   # help texts
-source "$WINRUN_LIB_DIR/30-utils.sh"   # errors, paths, runner discovery and selection
-source "$WINRUN_LIB_DIR/40-product.sh"   # product naming and install dirs
-source "$WINRUN_LIB_DIR/50-install.sh"   # version lists, download, install/update/remove runners
-source "$WINRUN_LIB_DIR/60-launch.sh"   # Steam runtime, launch command, Gamescope/MangoHud/overlay
-source "$WINRUN_LIB_DIR/70-session.sh"   # sessions and network namespace (pasta keeper)
-source "$WINRUN_LIB_DIR/80-prefix.sh"   # prefix init, cached env/associations, drive maps, targets
-source "$WINRUN_LIB_DIR/90-status.sh"   # status and doctor
-source "$WINRUN_LIB_DIR/91-cli.sh"   # argument parsing
-source "$WINRUN_LIB_DIR/92-helpers.sh"   # re-entrant helper mains (keeper / gamescope / IM watch)
+source "$WINRUN_LIB_DIR/core.sh"   # locale, debug/run logging, app id
+source "$WINRUN_LIB_DIR/usage.sh"   # help texts
+source "$WINRUN_LIB_DIR/utils.sh"   # errors, paths, runner discovery and selection
+source "$WINRUN_LIB_DIR/product.sh"   # product naming and install dirs
+source "$WINRUN_LIB_DIR/runners.sh"   # version lists, download, install/update/remove runners
+source "$WINRUN_LIB_DIR/launch.sh"   # Steam runtime, launch command, Gamescope/MangoHud/overlay
+source "$WINRUN_LIB_DIR/session.sh"   # sessions and network namespace (pasta keeper)
+source "$WINRUN_LIB_DIR/prefix.sh"   # prefix init, cached env/associations, drive maps, targets
+source "$WINRUN_LIB_DIR/status.sh"   # status and doctor
+source "$WINRUN_LIB_DIR/cli.sh"   # argument parsing
+source "$WINRUN_LIB_DIR/helpers.sh"   # re-entrant helper mains (keeper / gamescope / IM watch)
 
 case "${1:-}" in
   --session-keeper)
