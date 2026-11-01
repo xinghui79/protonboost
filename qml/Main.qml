@@ -712,6 +712,15 @@ ApplicationWindow {
         }
     }
 
+    // 合成器发来的关闭请求（比如桌面的 Super+Q、窗口管理器的关闭按钮）：
+    // 有托盘就收进去，别把进程直接杀掉——退出走托盘右键菜单。
+    onClosing: function (close) {
+        if (!root.configureMode && backend.tray_available) {
+            close.accepted = false
+            root.hide()
+        }
+    }
+
     function closeWindow() {
         if (root.configureMode || !backend.tray_available) {
             backend.quit_app()
@@ -1260,9 +1269,14 @@ ApplicationWindow {
                             padding: 4
                             background: Rectangle { radius: 10; color: c.row; border.width: 1; border.color: c.line }
                             WMenuItem {
-                                text: root.zh ? "选择 exe 文件…" : "Choose an .exe…"
+                                text: root.zh ? "添加 exe 文件…" : "Add an .exe…"
                                 onTriggered: addExeDialog.open()
                             }
+                            WMenuItem {
+                                text: root.zh ? "直接运行 exe…（安装包用）" : "Run an .exe… (installers)"
+                                onTriggered: runExeDialog.open()
+                            }
+                            MenuSeparator { contentItem: Rectangle { implicitHeight: 1; color: c.line } }
                             WMenuItem {
                                 text: root.zh ? "从安装目录挑选…" : "Pick from a folder…"
                                 onTriggered: {
@@ -2191,11 +2205,18 @@ ApplicationWindow {
         }
     }
 
-    // 「添加应用 → 选择 exe 文件」用的选择器
+    // 「添加应用 → 添加 exe 文件」：走运行设置，存进应用列表
     FileDialog {
         id: addExeDialog
         nameFilters: ["Windows 程序 (*.exe)"]
         onAccepted: backend.config_from_exe(root.appsPrefix, selectedFile.toString().replace("file://", ""))
+    }
+
+    // 「添加应用 → 直接运行 exe」：装个安装包用，跑完不往列表里塞条目
+    FileDialog {
+        id: runExeDialog
+        nameFilters: ["Windows 程序 (*.exe)"]
+        onAccepted: backend.run_path(selectedFile.toString().replace("file://", ""), root.appsPrefix, "")
     }
 
     // ── 弹层：运行设置 ──────────────────────────────────────

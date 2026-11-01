@@ -47,7 +47,11 @@ winrun-manager --list-runner          # 列出发现的 Proton / Wine
 winrun-manager --dump-scan            # 打印前缀扫描结果，排查界面为什么空
 ```
 
-- **右键 exe**：文件关联给了「运行 Windows 软件」和「设置运行环境」两个动作。
+- **右键 exe**：装好之后（`./install.sh`），文件管理器里右键任意 exe 有「运行Windows软件」
+  和「设置Windows软件运行环境」两个动作。
+- **装 Windows 软件**：下载来的安装包（setup.exe 之类）用上面那个右键动作就能直接跑起来，
+  安装向导和 Windows 上一样。没装桌面入口时，用管理器里的「添加应用 → 直接运行 exe」，
+  跑完不会往应用列表里塞条目；装好的程序会出现在 Windows 开始菜单里，刷新列表就能看到。
 - **Steam 游戏**：启动选项填 `winrun-manager --exec %command%`，兼容性选一个 Proton。
 
 界面里的键盘操作：
@@ -63,8 +67,9 @@ winrun-manager --dump-scan            # 打印前缀扫描结果，排查界面�
 | `Ctrl+W` | 关闭窗口（有托盘就收进托盘） |
 | `Ctrl+Q` | 退出程序 |
 
-关窗口默认只是收进托盘；如果桌面环境没有托盘（比如没装 AppIndicator 的 GNOME），
-关窗口就直接退出，不会留下一个找不回来的后台进程。
+关窗口（点关闭按钮、按 `Ctrl+W`、或者用桌面的 `Super+Q`）都只是收进托盘，进程继续跑；
+真正退出走托盘图标的右键菜单，或 `Ctrl+Q`。如果桌面环境没有托盘（比如没装 AppIndicator
+的 GNOME），关窗口就直接退出，不会留下一个找不回来的后台进程。
 
 数据都在本地：
 
