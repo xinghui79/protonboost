@@ -13,7 +13,7 @@ pub mod ffi {
         fn winrun_install_log_bridge();
 
         #[rust_name = "app_new"]
-        fn winrun_app_new() -> UniquePtr<QApplication>;
+        fn winrun_app_new(version: &QString) -> UniquePtr<QApplication>;
 
         #[rust_name = "app_exec"]
         fn winrun_app_exec(app: &QApplication) -> i32;

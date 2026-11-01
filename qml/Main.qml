@@ -10,26 +10,27 @@ ApplicationWindow {
     id: root
 
     // ── 设计变量 ────────────────────────────────────────────
+    // 主色是墨：主按钮、标题都用它；暖琥珀只在焦点、运行中这类地方点一下。
     readonly property QtObject c: QtObject {
-        readonly property color accent: "#5b5bd6"
-        readonly property color accentText: dark ? "#a9a9f7" : "#4a4ac4"
-        readonly property color accentSoft: dark ? "#2a2a3d" : "#ecedfb"
-        readonly property color accentHover: "#6f6fe0"
         readonly property bool dark: Qt.styleHints.colorScheme === Qt.Dark
-        readonly property color window: dark ? "#1c1c1e" : "#ffffff"
-        readonly property color sidebar: dark ? "#232325" : "#f3f3f5"
-        readonly property color group: dark ? "#232325" : "#f7f7f8"
-        readonly property color row: dark ? "#2c2c2e" : "#ffffff"
-        readonly property color rowHover: dark ? "#333336" : "#f5f5f7"
-        readonly property color line: dark ? "#3a3a3d" : "#e6e6e8"
-        readonly property color field: dark ? "#2c2c2e" : "#ffffff"
-        readonly property color fieldLine: dark ? "#48484b" : "#dcdce0"
-        readonly property color text: dark ? "#f5f5f7" : "#1d1d1f"
-        readonly property color dim: dark ? "#9d9da3" : "#6e6e73"
-        readonly property color faint: dark ? "#6c6c72" : "#98989d"
-        readonly property color danger: "#d9483f"
-        readonly property color hover: dark ? "#16ffffff" : "#0a000000"
-        readonly property color press: dark ? "#24ffffff" : "#14000000"
+        readonly property color ink: dark ? "#f4f4f6" : "#16181c"
+        readonly property color inkText: dark ? "#17181a" : "#ffffff"
+        readonly property color accent: dark ? "#f0ae56" : "#b86a15"
+        readonly property color accentSoft: dark ? "#2b2419" : "#fbf0df"
+        readonly property color window: dark ? "#131417" : "#fdfdfd"
+        readonly property color sidebar: dark ? "#0f1012" : "#f3f3f5"
+        readonly property color row: dark ? "#1a1b1e" : "#ffffff"
+        readonly property color group: dark ? "#191a1d" : "#f7f7f8"
+        readonly property color rowHover: dark ? "#212226" : "#f5f5f7"
+        readonly property color line: dark ? "#2a2c30" : "#e5e5e8"
+        readonly property color field: dark ? "#1e2023" : "#ffffff"
+        readonly property color fieldLine: dark ? "#33363b" : "#d8d9dd"
+        readonly property color text: dark ? "#f3f4f6" : "#16181c"
+        readonly property color dim: dark ? "#a1a5ac" : "#6a6e75"
+        readonly property color faint: dark ? "#6d7178" : "#9aa0a6"
+        readonly property color danger: dark ? "#ff6961" : "#c7362f"
+        readonly property color hover: dark ? "#14ffffff" : "#0d000000"
+        readonly property color press: dark ? "#24ffffff" : "#1a000000"
     }
 
     readonly property bool zh: backend.zh
@@ -37,6 +38,7 @@ ApplicationWindow {
 
     // ── 文案 ────────────────────────────────────────────────
     readonly property string appName: "WinRun"
+    readonly property string version: "v" + Qt.application.version
     readonly property var pageNames: [zh ? "应用" : "Apps", zh ? "Linux 程序" : "Linux Apps",
                                        zh ? "进程" : "Processes", zh ? "目录" : "Folders"]
     readonly property var pageKeys: ["apps", "linux", "procs", "dirs"]
@@ -188,13 +190,13 @@ ApplicationWindow {
     // ── 基础控件 ────────────────────────────────────────────
     component WButton: Button {
         id: wb
-        implicitHeight: 32
-        padding: 14
+        implicitHeight: 30
+        padding: 12
         hoverEnabled: true
         background: Rectangle {
-            radius: 8
+            radius: 7
             color: wb.pressed ? c.press : (wb.hovered ? c.hover : "transparent")
-            border.width: wb.subtle ? 0 : 1
+            border.width: wb.outlined ? 1 : 0
             border.color: c.fieldLine
         }
         contentItem: Text {
@@ -204,23 +206,23 @@ ApplicationWindow {
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
         }
-        /// 轻量按钮：无边框，只在悬停时有一层底色
-        property bool subtle: false
+        /// 描边样式（默认是纯文字按钮）
+        property bool outlined: false
     }
 
     component WAccentButton: Button {
         id: wab
-        implicitHeight: 32
-        padding: 16
+        implicitHeight: 30
+        padding: 14
         background: Rectangle {
-            radius: 8
-            color: !wab.enabled ? c.line : (wab.pressed || wab.hovered ? c.accentHover : c.accent)
+            radius: 7
+            color: !wab.enabled ? c.line : (wab.pressed || wab.hovered ? Qt.lighter(c.ink, c.dark ? 0.92 : 1.6) : c.ink)
         }
         contentItem: Text {
             text: wab.text
             font.pixelSize: 13
-            font.weight: Font.DemiBold
-            color: "#ffffff"
+            font.weight: Font.Medium
+            color: c.inkText
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
         }
@@ -228,13 +230,11 @@ ApplicationWindow {
 
     component WDangerButton: Button {
         id: wdb
-        implicitHeight: 32
-        padding: 14
+        implicitHeight: 30
+        padding: 12
         background: Rectangle {
-            radius: 8
+            radius: 7
             color: wdb.hovered || wdb.pressed ? c.danger : "transparent"
-            border.width: 1
-            border.color: wdb.hovered || wdb.pressed ? c.danger : c.fieldLine
         }
         contentItem: Text {
             text: wdb.text
@@ -503,74 +503,64 @@ ApplicationWindow {
         return path.length > 46 ? "…/" + tail : path
     }
 
-    // ── 标题栏 ──────────────────────────────────────────────
+    // ── 标题栏：左边红绿灯，中间页面名 ──────────────────────
     header: Rectangle {
-        height: 46
+        height: 44
         color: root.configureMode ? c.window : c.sidebar
+
         MouseArea {
             anchors.fill: parent
             onPressed: root.startSystemMove()
             onDoubleClicked: root.toggleMaximized()
         }
-        RowLayout {
-            anchors.fill: parent
-            anchors.leftMargin: 16
-            anchors.rightMargin: 8
-            spacing: 10
 
-            Rectangle {
-                visible: !root.configureMode
-                Layout.preferredWidth: 20
-                Layout.preferredHeight: 20
+        Row {
+            id: trafficLights
+            anchors.left: parent.left
+            anchors.leftMargin: 18
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: 8
+
+            component TrafficLight: Rectangle {
+                id: light
+                property color base: "#ff5f57"
+                property string action: "close"
+                width: 12
+                height: 12
                 radius: 6
-                color: c.accent
-                Text {
-                    anchors.centerIn: parent
-                    text: "W"
-                    color: "#ffffff"
-                    font.pixelSize: 11
-                    font.bold: true
+                color: lightArea.containsMouse ? Qt.lighter(light.base, 1.18) : light.base
+                border.width: 0.5
+                border.color: "#00000033"
+                MouseArea {
+                    id: lightArea
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    onClicked: {
+                        if (light.action === "close") {
+                            if (root.configureMode) Qt.quit(); else root.hide()
+                        } else if (light.action === "min") {
+                            root.showMinimized()
+                        } else {
+                            root.toggleMaximized()
+                        }
+                    }
                 }
             }
-            Text {
-                text: root.appName
-                font.pixelSize: 13
-                font.weight: Font.DemiBold
-                color: c.text
-            }
-            Text {
-                text: root.configureMode ? (root.zh ? "运行设置" : "Run Settings") : "· " + root.pageTitles[root.currentPage]
-                font.pixelSize: 13
-                color: c.dim
-            }
-            Item { Layout.fillWidth: true }
 
-            component TitleBarButton: AbstractButton {
-                id: tb
-                property string glyph: ""
-                property bool danger: false
-                implicitWidth: 32
-                implicitHeight: 26
-                background: Rectangle {
-                    radius: 6
-                    color: tb.danger && tb.hovered ? c.danger : (tb.hovered ? c.hover : "transparent")
-                }
-                contentItem: Text {
-                    text: tb.glyph
-                    font.pixelSize: 11
-                    color: tb.danger && tb.hovered ? "#ffffff" : c.dim
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                }
-            }
-            TitleBarButton { glyph: "—"; onClicked: root.showMinimized() }
-            TitleBarButton { glyph: "▢"; onClicked: root.toggleMaximized() }
-            TitleBarButton {
-                glyph: "✕"
-                danger: true
-                onClicked: { if (root.configureMode) Qt.quit(); else root.hide() }
-            }
+            TrafficLight { base: "#ff5f57"; action: "close" }
+            TrafficLight { base: "#febc2e"; action: "min" }
+            TrafficLight { base: "#28c840"; action: "max" }
         }
+
+        Text {
+            anchors.centerIn: parent
+            text: root.configureMode ? (root.zh ? "运行设置" : "Run Settings") : root.appName
+            font.pixelSize: 13
+            font.weight: Font.DemiBold
+            color: c.text
+            opacity: 0.8
+        }
+
         Rectangle {
             anchors.bottom: parent.bottom
             width: parent.width
@@ -591,25 +581,25 @@ ApplicationWindow {
 
         Rectangle {
             visible: !root.configureMode
-            Layout.preferredWidth: 224
+            Layout.preferredWidth: 208
             Layout.fillHeight: true
             color: c.sidebar
 
             ColumnLayout {
                 anchors.fill: parent
-                anchors.topMargin: 14
-                anchors.bottomMargin: 12
-                anchors.leftMargin: 12
-                anchors.rightMargin: 12
-                spacing: 2
+                anchors.topMargin: 16
+                anchors.bottomMargin: 14
+                anchors.leftMargin: 10
+                anchors.rightMargin: 10
+                spacing: 1
 
                 Text {
-                    text: root.zh ? "导航" : "SECTIONS"
+                    text: root.zh ? "页面" : "SECTIONS"
                     font.pixelSize: 11
-                    font.letterSpacing: 0.8
+                    font.letterSpacing: 0.6
                     color: c.faint
-                    Layout.leftMargin: 10
-                    Layout.bottomMargin: 6
+                    Layout.leftMargin: 9
+                    Layout.bottomMargin: 7
                 }
 
                 Repeater {
@@ -618,16 +608,18 @@ ApplicationWindow {
                         id: navBtn
                         required property int index
                         Layout.fillWidth: true
-                        implicitHeight: 34
+                        implicitHeight: 32
                         background: Rectangle {
-                            radius: 8
-                            color: navBtn.index === root.currentPage ? c.accentSoft
-                                 : (navBtn.hovered ? c.hover : "transparent")
+                            radius: 7
+                            color: navBtn.index === root.currentPage
+                                   ? (c.dark ? "#26282c" : "#e6e6ea")
+                                   : (navBtn.hovered ? c.hover : "transparent")
                         }
                         contentItem: Text {
-                            leftPadding: 12
+                            leftPadding: 9
                             text: root.pageNames[navBtn.index]
-                            color: navBtn.index === root.currentPage ? c.accentText : c.text
+                            color: navBtn.index === root.currentPage ? c.text
+                                 : (navBtn.hovered ? c.text : c.dim)
                             font.pixelSize: 13
                             font.weight: navBtn.index === root.currentPage ? Font.DemiBold : Font.Normal
                             verticalAlignment: Text.AlignVCenter
@@ -638,21 +630,9 @@ ApplicationWindow {
 
                 Item { Layout.fillHeight: true }
 
-                Rectangle {
-                    Layout.fillWidth: true
-                    implicitHeight: 1
-                    color: c.line
-                    Layout.bottomMargin: 8
-                }
                 Text {
-                    Layout.leftMargin: 10
-                    text: root.zh ? "本地维护版" : "Locally maintained"
-                    font.pixelSize: 11
-                    color: c.faint
-                }
-                Text {
-                    Layout.leftMargin: 10
-                    text: "Proton / Wine"
+                    Layout.leftMargin: 9
+                    text: root.version
                     font.pixelSize: 11
                     color: c.faint
                 }
@@ -730,9 +710,10 @@ ApplicationWindow {
                 spacing: 10
                 Text {
                     text: root.pageTitles[root.currentPage]
-                    font.pixelSize: 21
+                    font.pixelSize: 24
                     font.weight: Font.Bold
                     color: c.text
+                    font.letterSpacing: -0.4
                 }
                 Item { Layout.fillWidth: true }
                 RowLayout { id: actionsRow; spacing: 8 }
@@ -741,6 +722,7 @@ ApplicationWindow {
                 text: root.pageSubtitles[root.currentPage]
                 font.pixelSize: 13
                 color: c.dim
+                lineHeight: 1.25
                 wrapMode: Text.WordWrap
                 Layout.fillWidth: true
             }
@@ -752,7 +734,7 @@ ApplicationWindow {
         PrefixPicker {}
         WSearchField {
             id: pageSearchField
-            Layout.preferredWidth: 240
+            Layout.preferredWidth: 220
             placeholderText: root.searchHints[root.currentPage]
             text: root.searchValues[root.currentPage]
             onTextEdited: {
@@ -875,7 +857,7 @@ ApplicationWindow {
 
             PageHeader {
                 Layout.fillWidth: true
-                WButton {
+                WAccentButton {
                     text: root.zh ? "添加应用" : "Add App"
                     onClicked: backend.new_config(root.appsPrefix)
                 }
@@ -955,7 +937,7 @@ ApplicationWindow {
                                     Text {
                                         text: modelData.name
                                         color: c.text
-                                        font.pixelSize: 13
+                                        font.pixelSize: 14
                                         font.weight: Font.DemiBold
                                         elide: Text.ElideRight
                                         Layout.maximumWidth: parent.width - 70
@@ -989,7 +971,6 @@ ApplicationWindow {
 
                                 WButton {
                                     visible: modelData.hasLog
-                                    subtle: true
                                     text: root.zh ? "日志" : "Log"
                                     onClicked: {
                                         root.currentLogAppId = modelData.appId
@@ -1018,7 +999,6 @@ ApplicationWindow {
                                 }
                                 WButton {
                                     visible: modelData.canConfig
-                                    subtle: true
                                     text: root.zh ? "设置" : "Settings"
                                     onClicked: backend.open_config(modelData.appId, root.appsPrefix)
                                 }
@@ -1379,7 +1359,6 @@ ApplicationWindow {
                                     onClicked: backend.show_dir_exes(root.dirsPrefix, modelData.path)
                                 }
                                 WButton {
-                                    subtle: true
                                     text: root.zh ? "打开" : "Open"
                                     onClicked: backend.open_folder(modelData.path)
                                 }
@@ -1595,7 +1574,6 @@ ApplicationWindow {
                             }
                         }
                         WButton {
-                            subtle: true
                             text: root.zh ? "运行" : "Run"
                             onClicked: backend.run_path(modelData.path, root.dirsPrefix, "")
                         }
@@ -1636,9 +1614,11 @@ ApplicationWindow {
         id: configDialog
         modal: true
         closePolicy: Popup.CloseOnEscape
-        anchors.centerIn: Overlay.overlay
         width: 580
-        height: Math.min(720, root.height - 24)
+        // 独立设置窗口里让出标题栏，红绿灯和窗口名还看得见
+        x: Math.round((root.width - width) / 2)
+        y: root.configureMode ? 56 : Math.max(12, Math.round((root.height - height) / 2))
+        height: root.configureMode ? Math.min(696, root.height - 80) : Math.min(700, root.height - 40)
         padding: 0
         background: Rectangle { radius: 14; color: c.row; border.width: 1; border.color: c.line }
 
@@ -1725,7 +1705,7 @@ ApplicationWindow {
                     x: 20
                     y: 16
                     width: parent.width - 40
-                    spacing: 16
+                    spacing: 14
 
                     // 常规
                     ColumnLayout {

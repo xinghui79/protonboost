@@ -23,11 +23,16 @@ void winrun_install_log_bridge() {
     });
 }
 
-std::unique_ptr<QApplication> winrun_app_new() {
+std::unique_ptr<QApplication> winrun_app_new(const QString &version) {
     static int argc = 1;
     static char arg0[] = "winrun-manager";
     static char *argv[] = {arg0, nullptr};
-    return std::unique_ptr<QApplication>(new QApplication(argc, argv));
+    auto app = std::unique_ptr<QApplication>(new QApplication(argc, argv));
+    QApplication::setApplicationName(QStringLiteral("WinRun"));
+    QApplication::setApplicationDisplayName(QStringLiteral("WinRun"));
+    QApplication::setApplicationVersion(version);
+    QApplication::setDesktopFileName(QStringLiteral("winrun"));
+    return app;
 }
 
 int winrun_app_exec(const QApplication &app) {

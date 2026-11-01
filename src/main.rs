@@ -7,11 +7,9 @@
 mod app;
 mod core;
 mod engine;
-mod qt;
 
-// 让 crate::bridge / crate::jobs 这些老路径继续可用（模块实际在子目录里）
-pub use app::{ipc, jobs};
-pub use qt::{bridge, shim_bridge};
+// 让 crate::bridge / crate::jobs 这些短路径继续可用（模块实际在子目录里）
+pub use app::{bridge, ipc, jobs, shim_bridge};
 
 use cxx_qt_lib::{QString, QQmlApplicationEngine, QUrl};
 use std::path::PathBuf;
@@ -107,7 +105,7 @@ fn main() {
     cxx_qt::init_qml_module!("WinRun");
 
     shim_bridge::log_bridge();
-    let mut app = shim_bridge::app_new();
+    let mut app = shim_bridge::app_new(&QString::from(env!("CARGO_PKG_VERSION")));
 
     // 托盘（独立配置窗口不需要）
     if !configure_mode {
@@ -192,7 +190,7 @@ fn tray_icon_path() -> PathBuf {
     std::env::current_exe()
         .ok()
         .and_then(|exe| exe.ancestors().nth(3).map(|dir| dir.to_path_buf()))
-        .map(|dir| dir.join("icons/hicolor/512x512/apps/winrun.png"))
+        .map(|dir| dir.join("icons/winrun.png"))
         .filter(|path| path.is_file())
         .unwrap_or_else(|| PathBuf::from("winrun"))
 }

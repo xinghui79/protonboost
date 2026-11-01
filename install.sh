@@ -22,24 +22,22 @@ build_manager() {
 case "$MODE" in
 install)
     build_manager
-    # 清掉上一版（Bash CLI）留下的文件
-    rm -f "$BIN_DIR/winrun" "$BIN_DIR/winrun-configure"
-    rm -rf "$PREFIX/lib/winrun"
     install -Dm755 target/release/winrun-manager "$BIN_DIR/winrun-manager"
-    install -Dm644 -t "$APP_DIR" share/applications/*.desktop
-    install -Dm644 icons/hicolor/512x512/apps/winrun.png "$ICON_PNG/winrun.png"
-    install -Dm644 icons/hicolor/scalable/apps/winrun.svg "$ICON_SVG/winrun.svg"
+    install -Dm644 -t "$APP_DIR" desktop/*.desktop
+    install -Dm644 icons/winrun.png "$ICON_PNG/winrun.png"
+    install -Dm644 icons/winrun.svg "$ICON_SVG/winrun.svg"
     command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$APP_DIR" || true
     command -v gtk-update-icon-cache >/dev/null 2>&1 && gtk-update-icon-cache -qtf "$PREFIX/share/icons/hicolor" || true
     echo "已安装到 $PREFIX — 命令: winrun-manager"
     ;;
 uninstall)
-    rm -f "$BIN_DIR/winrun-manager" "$BIN_DIR/winrun" "$BIN_DIR/winrun-configure"
-    rm -f "$APP_DIR/winrun-manager.desktop" \
-          "$APP_DIR/winrun-run-windows-program.desktop" \
-          "$APP_DIR/winrun-windows-program-configure.desktop"
-    rm -f "$ICON_PNG/winrun.png" "$ICON_SVG/winrun.svg"
+    rm -f "$BIN_DIR/winrun-manager"
+    rm -f "$APP_DIR/winrun-manager.desktop" "$APP_DIR/winrun-run.desktop" "$APP_DIR/winrun-settings.desktop"
+    # 早期版本的桌面入口
+    rm -f "$APP_DIR/winrun-run-windows-program.desktop" "$APP_DIR/winrun-windows-program-configure.desktop"
+    rm -f "$BIN_DIR/winrun" "$BIN_DIR/winrun-configure"
     rm -rf "$PREFIX/lib/winrun"
+    rm -f "$ICON_PNG/winrun.png" "$ICON_SVG/winrun.svg"
     command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$APP_DIR" || true
     echo "已从 $PREFIX 移除 winrun"
     ;;
