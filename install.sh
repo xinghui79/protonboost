@@ -20,6 +20,8 @@ install)
     install -Dm644 icons/hicolor/scalable/apps/winrun.svg "$ICON_SVG/winrun.svg"
     command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$APP_DIR" || true
     command -v gtk-update-icon-cache >/dev/null 2>&1 && gtk-update-icon-cache -qtf "$PREFIX/share/icons/hicolor" || true
+    # 默认打开独立网络（本项目的使用方式）；--netns off 随时关
+    "$BIN_DIR/winrun" --netns on || true
     echo "已安装到 $PREFIX — 命令: winrun / winrun-configure / winrun-manager"
     ;;
 uninstall)

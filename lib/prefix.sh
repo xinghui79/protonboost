@@ -28,6 +28,9 @@ init_prefix() {
     die "failed to initialize prefix: $PREFIX (exit $status)
 See $log"
   fi
+
+  # winrun 立场：新建前缀默认进独立网络；winrun --netns off 是逃生门。
+  set_prefix_netns 1
   wait_wineserver_exit
 }
 
