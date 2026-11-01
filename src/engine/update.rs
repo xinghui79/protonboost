@@ -30,8 +30,10 @@ fn install_dirs() -> Vec<PathBuf> {
 
 fn installed_version(dir: &Path) -> String {
     let version = std::fs::read_to_string(dir.join("version")).unwrap_or_default();
+    // GE 的 version 文件写的是 "GE-Proton11-11"，WE 是 "1792606118 we-proton-ge11-11-31"，
+    // 所以不能要求 token 以数字开头，取最后一个「含数字」的就行。
     for token in version.split_whitespace().rev() {
-        if token.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+        if token.chars().any(|c| c.is_ascii_digit()) {
             return token.to_string();
         }
     }
@@ -106,8 +108,31 @@ pub fn latest_release(product: &str) -> Option<Release> {
     })
 }
 
+/// 版本号里的数字段：`GE-Proton11-11` 与 `11-11` 都得到 [11, 11]
+fn version_key(value: &str) -> Vec<u64> {
+    let mut parts: Vec<u64> = Vec::new();
+    let mut current = String::new();
+    for ch in value.chars() {
+        if ch.is_ascii_digit() {
+            current.push(ch);
+        } else if !current.is_empty() {
+            parts.push(current.parse().unwrap_or(0));
+            current.clear();
+        }
+    }
+    if !current.is_empty() {
+        parts.push(current.parse().unwrap_or(0));
+    }
+    parts
+}
+
 fn version_newer(current: &str, latest: &str) -> bool {
-    current != latest && current < latest
+    let have = version_key(current);
+    let want = version_key(latest);
+    if have.is_empty() || want.is_empty() {
+        return current != latest;
+    }
+    have < want
 }
 
 /// 已装的 Latest 运行器里，有哪些比线上的旧

@@ -1219,7 +1219,11 @@ impl ffi::Backend {
             }
             rust.update_running = true;
         }
-        self.as_mut().set_status(QString::from(if zh { "更新中..." } else { "Updating..." }));
+        self.as_mut().set_status(QString::from(if zh {
+            "正在下载运行器（约 400 MB），可能要几分钟…"
+        } else {
+            "Downloading runner (~400 MB), this may take a few minutes…"
+        }));
         jobs::send(Job::UpdateRun);
     }
 
