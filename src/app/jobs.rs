@@ -12,7 +12,10 @@ use std::sync::{Mutex, OnceLock};
 pub struct AppRow {
     pub app_id: String,
     pub display_name: String,
+    /// 安装文件夹名（带 Steam / 缺失标记）
     pub detail: String,
+    /// 运行中显示 PID，否则显示上次运行时间
+    pub meta: String,
     pub icon: String,
     pub running: bool,
     pub has_log: bool,
@@ -21,6 +24,8 @@ pub struct AppRow {
     pub steam_appid: String,
     pub kind: String,
     pub path: String,
+    /// 同一路径的 Windows 写法（详情栏里比 /home/.../pfx/drive_c 好读）
+    pub win_path: String,
     pub runner: String,
 }
 
@@ -267,29 +272,42 @@ fn build_app_rows(
     apps: &[AppEntry],
     running: &HashMap<String, (Vec<i32>, String, String)>,
 ) -> Vec<AppRow> {
+    let zh = crate::core::loc::zh();
     apps.iter()
         .map(|app| {
             let app_id = scan::app_identity(prefix, std::path::Path::new(&app.path));
-            let is_running = running.contains_key(&app_id);
-            let log = match running.get(&app_id) {
+            let entry = running.get(&app_id);
+            let is_running = entry.is_some();
+            let log = match entry {
                 Some((_, log, _)) if !log.is_empty() => Some(PathBuf::from(log)),
                 _ => crate::core::paths::latest_log_for_app(&app_id),
             };
-            let location = scan::app_location(prefix, app);
+            // 副标题只放安装文件夹，不再整条 Windows 路径
+            let folder = app_folder(app);
             let detail = if app.missing {
-                format!("目标不存在 · {location}")
+                format!("{} · {folder}", if zh { "目标不存在" } else { "Missing" })
             } else {
-                location
+                folder
             };
-            let detail = if !app.steam_appid.is_empty() {
-                format!("Steam · {detail}")
-            } else {
-                detail
+            let meta = match entry {
+                Some((pids, _, _)) => {
+                    let list: Vec<String> = pids.iter().map(|pid| pid.to_string()).collect();
+                    format!("PID {}", list.join(", "))
+                }
+                None => {
+                    let when = last_used_text(app.last_used, zh);
+                    if app.steam_appid.is_empty() {
+                        when
+                    } else {
+                        format!("Steam · {when}")
+                    }
+                }
             };
             AppRow {
                 app_id,
                 display_name: scan::app_display_name(app),
                 detail,
+                meta,
                 icon: String::new(),
                 running: is_running,
                 has_log: log.is_some_and(|path| path.exists()),
@@ -298,10 +316,53 @@ fn build_app_rows(
                 steam_appid: app.steam_appid.clone(),
                 kind: app.kind.clone(),
                 path: app.path.clone(),
+                win_path: scan::windows_display_path(prefix, std::path::Path::new(&app.path)),
                 runner: app.runner.clone(),
             }
         })
         .collect()
+}
+
+/// 程序所在文件夹名：`.../Netease/UU/uulauncher.exe` → `UU`
+fn app_folder(app: &AppEntry) -> String {
+    let base = if app.target_exe.is_empty() { &app.path } else { &app.target_exe };
+    std::path::Path::new(base)
+        .parent()
+        .and_then(|dir| dir.file_name())
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| if app.missing { String::new() } else { app.kind.clone() })
+}
+
+/// 上次运行时间的口语化说法
+fn last_used_text(seconds: f64, zh: bool) -> String {
+    if seconds <= 0.0 {
+        return if zh { "从未运行".into() } else { "Never run".into() };
+    }
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs_f64())
+        .unwrap_or(seconds);
+    let delta = (now - seconds).max(0.0);
+    let minutes = (delta / 60.0) as u64;
+    let hours = minutes / 60;
+    let days = hours / 24;
+    if zh {
+        match (days, hours, minutes) {
+            (0, 0, 0) => "刚刚运行过".to_string(),
+            (0, 0, m) => format!("{m} 分钟前运行"),
+            (0, h, _) => format!("{h} 小时前运行"),
+            (d, _, _) if d < 30 => format!("{d} 天前运行"),
+            _ => "很久以前运行过".to_string(),
+        }
+    } else {
+        match (days, hours, minutes) {
+            (0, 0, 0) => "run just now".to_string(),
+            (0, 0, m) => format!("run {m} min ago"),
+            (0, h, _) => format!("run {h} h ago"),
+            (d, _, _) if d < 30 => format!("run {d} d ago"),
+            _ => "run long ago".to_string(),
+        }
+    }
 }
 
 /// [Desktop Entry] 段解析：跳过其他段，同键取第一个值

@@ -167,16 +167,6 @@ pub fn windows_display_path(prefix: &Path, path: &Path) -> String {
     }
 }
 
-pub fn app_location(prefix: &Path, app: &AppEntry) -> String {
-    let base = if app.target_exe.is_empty() { &app.path } else { &app.target_exe };
-    let shown = windows_display_path(prefix, Path::new(base));
-    let home_str = home().to_string_lossy().into_owned() + "/";
-    if let Some(rest) = shown.strip_prefix(&home_str) {
-        format!("~{rest}")
-    } else {
-        shown
-    }
-}
 
 // ── Windows 路径 → Linux 路径 ────────────────────────────────
 pub fn windows_path_to_linux(prefix: &Path, value: &str) -> Option<PathBuf> {

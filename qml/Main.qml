@@ -1,5 +1,6 @@
 // WinRun 管理器 —— 界面
-// 版式参考 macOS 设置：侧栏 + 大标题 + 分组列表 + 右侧按钮；浅色/深色跟随系统
+// 版式参考 macOS 设置：侧栏（前缀 + 视图）+ 大标题 + 分组列表 + 右侧检查器
+// 修改本文件后直接 cargo build 即可，build.rs 会保证重新链接
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -22,6 +23,7 @@ ApplicationWindow {
         readonly property color row: dark ? "#1a1b1e" : "#ffffff"
         readonly property color group: dark ? "#191a1d" : "#f7f7f8"
         readonly property color rowHover: dark ? "#212226" : "#f5f5f7"
+        readonly property color rowActive: dark ? "#26282c" : "#ececee"
         readonly property color line: dark ? "#2a2c30" : "#e5e5e8"
         readonly property color field: dark ? "#1e2023" : "#ffffff"
         readonly property color fieldLine: dark ? "#33363b" : "#d8d9dd"
@@ -40,32 +42,28 @@ ApplicationWindow {
     readonly property string appName: "WinRun"
     readonly property string version: "v" + Qt.application.version
     readonly property var pageNames: [zh ? "应用" : "Apps", zh ? "Linux 程序" : "Linux Apps",
-                                       zh ? "进程" : "Processes", zh ? "目录" : "Folders"]
-    readonly property var pageKeys: ["apps", "linux", "procs", "dirs"]
+                                      zh ? "进程" : "Processes"]
+    readonly property var pageKeys: ["apps", "linux", "procs"]
     readonly property var pageTitles: [
         zh ? "应用" : "Applications",
         zh ? "Linux 程序" : "Linux Apps",
-        zh ? "正在运行的进程" : "Running Processes",
-        zh ? "安装目录" : "Install Folders"
+        zh ? "正在运行的进程" : "Running Processes"
     ]
     readonly property var pageSubtitles: [
         zh ? "前缀里登记过的 Windows 程序，可以运行、改设置、看日志。" : "Windows programs registered in this prefix.",
         zh ? "把 Linux 原生程序放进同一个前缀与网络里启动。" : "Start native Linux programs inside the same prefix.",
-        zh ? "这个前缀里的 Windows 进程，卡死时强制结束。" : "Windows processes of this prefix.",
-        zh ? "前缀里含 exe 的安装文件夹，可以直接生成应用配置。" : "Install folders containing executables."
+        zh ? "这个前缀里的 Windows 进程，卡死时强制结束。" : "Windows processes of this prefix."
     ]
     readonly property var searchHints: [
         zh ? "搜索应用" : "Search apps",
         zh ? "搜索程序" : "Search apps",
-        zh ? "搜索进程名、PID 或命令行" : "Search name, PID or command",
-        zh ? "搜索目录" : "Search folders"
+        zh ? "搜索进程名、PID 或命令行" : "Search name, PID or command"
     ]
 
     // ── 状态 ────────────────────────────────────────────────
     property int currentPage: 0
     property string appsPrefix: ""
     property string linuxPrefix: ""
-    property string dirsPrefix: ""
     property string procsPrefix: ""
     property var runnersModel: []
     property var resolutionsModel: []
@@ -76,12 +74,23 @@ ApplicationWindow {
     property string renameTarget: ""
     property string currentLogAppId: ""
     property string logTitle: ""
-    property var searchValues: ["", "", "", ""]
-    readonly property var searchKeys: ["appsSearch", "linuxSearch", "procsSearch", "dirsSearch"]
+    property var searchValues: ["", "", ""]
+    /// 自增一次 = 请求当前页把焦点交给搜索框（组件内部 id 外面看不见，只能这样通知）
+    property int searchFocusTick: 0
+
+    /// 侧栏前缀组：应用/Linux 用前缀列表，进程页用「前缀 · 游戏」的进程分组
+    readonly property var sidebarPrefixes: {
+        var source = currentPage === 2 ? backend.processPrefixes : backend.prefixes
+        var out = []
+        for (var i = 0; i < source.length; i++) out.push(source[i])
+        return out
+    }
+    readonly property bool anyPopup: configDialog.visible || confirmPopup.visible
+        || renamePopup.visible || logPopup.visible || exesPopup.visible || dirsPopup.visible
 
     visible: true
     width: configureMode ? 640 : 1180
-    height: configureMode ? 780 : 780
+    height: 780
     minimumWidth: configureMode ? 580 : 980
     minimumHeight: configureMode ? 640 : 620
     color: c.window
@@ -95,7 +104,6 @@ ApplicationWindow {
             for (var i = 0; i < backend.prefixes.length; i++) paths.push(backend.prefixes[i].path)
             if (paths.indexOf(appsPrefix) < 0) appsPrefix = paths.length ? paths[0] : ""
             if (paths.indexOf(linuxPrefix) < 0) linuxPrefix = appsPrefix
-            if (paths.indexOf(dirsPrefix) < 0) dirsPrefix = appsPrefix
         }
         onProcessPrefixesChanged: {
             var paths = []
@@ -152,11 +160,20 @@ ApplicationWindow {
         }
     }
 
-    Shortcut { sequence: "Ctrl+F"; onActivated: pageSearchField.forceActiveFocus() }
+    Shortcut { sequence: "Ctrl+F"; onActivated: root.searchFocusTick++ }
+    Shortcut { sequence: "Ctrl+R"; onActivated: root.refreshCurrent() }
     Shortcut { sequence: "Ctrl+1"; onActivated: root.switchPage(0) }
     Shortcut { sequence: "Ctrl+2"; onActivated: root.switchPage(1) }
     Shortcut { sequence: "Ctrl+3"; onActivated: root.switchPage(2) }
-    Shortcut { sequence: "Ctrl+4"; onActivated: root.switchPage(3) }
+    Shortcut {
+        sequence: "Esc"
+        enabled: !root.configureMode && !root.anyPopup
+        onActivated: {
+            // 第一次按清搜索，再按一次收起检查器
+            if (root.searchValues[root.currentPage] !== "") root.clearSearch()
+            else if (root.currentPage === 0) appsPage.clearSelection()
+        }
+    }
 
     function switchPage(index) {
         if (configureMode) return
@@ -165,19 +182,23 @@ ApplicationWindow {
     }
 
     function currentPrefix() {
-        return currentPage === 0 ? appsPrefix : currentPage === 1 ? linuxPrefix
-             : currentPage === 2 ? procsPrefix : dirsPrefix
+        return currentPage === 0 ? appsPrefix : currentPage === 1 ? linuxPrefix : procsPrefix
     }
 
     function setPrefix(value) {
         if (currentPage === 0) appsPrefix = value
         else if (currentPage === 1) linuxPrefix = value
-        else if (currentPage === 2) procsPrefix = value
-        else dirsPrefix = value
+        else procsPrefix = value
     }
 
     function refreshCurrent() {
         backend.refresh_page(pageKeys[currentPage], currentPrefix())
+    }
+
+    function clearSearch() {
+        var copy = searchValues.slice()
+        copy[currentPage] = ""
+        searchValues = copy
     }
 
     function confirm(title, message, action) {
@@ -185,6 +206,46 @@ ApplicationWindow {
         confirmTitle.text = title
         confirmMessage.text = message
         confirmPopup.open()
+    }
+
+    function prefixLabel(path) {
+        if (!path) return zh ? "没有前缀" : "No prefix"
+        var pieces = path.replace(/\/+$/, "").split("/")
+        return pieces[pieces.length - 1] || path
+    }
+
+    function prefixItemLabel(item) {
+        if (!item) return ""
+        var raw = item.label ? item.label : item.path
+        // 进程组的 label 有时是「游戏名 · /path」，只有纯路径才缩成目录名
+        if (raw.charAt(0) === "/") return prefixLabel(raw)
+        return raw
+    }
+
+    function shortPath(path) {
+        if (!path) return "—"
+        var parts = path.replace(/\/+$/, "").split("/")
+        if (parts.length < 2) return path
+        return parts[parts.length - 2] + "/" + parts[parts.length - 1]
+    }
+
+    function kindLabel(item) {
+        if (!item) return "—"
+        if (item.isSteam) return "Steam"
+        if (item.kind === "shortcut") return zh ? "快捷方式" : "Shortcut"
+        if (item.kind === "saved-config") return zh ? "已配置" : "Configured"
+        return item.kind
+    }
+
+    function pageSummary() {
+        if (currentPage === 0) {
+            var running = 0
+            for (var i = 0; i < backend.apps.length; i++) if (backend.apps[i].running) running++
+            return backend.apps.length + (zh ? " 个应用" : " apps")
+                 + (running > 0 ? (zh ? " · " + running + " 个运行中" : " · " + running + " running") : "")
+        }
+        if (currentPage === 1) return backend.linux_apps.length + (zh ? " 个程序" : " apps")
+        return backend.procs.length + (zh ? " 个进程" : " processes")
     }
 
     // ── 基础控件 ────────────────────────────────────────────
@@ -449,99 +510,24 @@ ApplicationWindow {
         }
     }
 
-    // 前缀选择：一个带下拉菜单的按钮
-    component PrefixPicker: Button {
-        id: picker
-        implicitHeight: 34
-        implicitWidth: Math.min(300, labelText.implicitWidth + 54)
-        ToolTip.visible: hovered
-        ToolTip.delay: 600
-        ToolTip.text: value
-        property var model: backend.prefixes
-        property string value: root.currentPrefix()
+    // 菜单项样式统一（弹层里的下拉都用它）
+    component WMenuItem: MenuItem {
+        id: wmi
+        height: 32
+        contentItem: Text {
+            leftPadding: 8
+            text: wmi.text
+            color: wmi.highlighted ? "#ffffff" : c.text
+            font.pixelSize: 13
+            verticalAlignment: Text.AlignVCenter
+        }
         background: Rectangle {
-            radius: 8
-            color: picker.hovered || picker.pressed ? c.rowHover : c.field
-            border.width: 1
-            border.color: picker.activeFocus ? c.accent : c.fieldLine
-        }
-        contentItem: Item {
-            Text {
-                id: labelText
-                anchors.left: parent.left
-                anchors.leftMargin: 11
-                anchors.right: chevron.left
-                anchors.rightMargin: 8
-                anchors.verticalCenter: parent.verticalCenter
-                text: root.prefixLabel(picker.value)
-                font.pixelSize: 13
-                color: c.text
-                elide: Text.ElideRight
-            }
-            Text {
-                id: chevron
-                anchors.right: parent.right
-                anchors.rightMargin: 11
-                anchors.verticalCenter: parent.verticalCenter
-                text: "⌄"
-                font.pixelSize: 13
-                color: c.faint
-            }
-        }
-        onClicked: prefixMenu.popup(picker, 0, picker.height + 6)
-        Menu {
-            id: prefixMenu
-            width: Math.max(320, picker.width)
-            padding: 4
-            background: Rectangle { radius: 10; color: c.row; border.width: 1; border.color: c.line }
-            Instantiator {
-                model: picker.model
-                delegate: MenuItem {
-                    id: prefixItem
-                    required property var modelData
-                    required property int index
-                    height: 32
-                    contentItem: Text {
-                        leftPadding: 8
-                        text: root.prefixLabel(modelData.path)
-                        color: prefixItem.highlighted ? "#ffffff" : c.text
-                        font.pixelSize: 13
-                        verticalAlignment: Text.AlignVCenter
-                        elide: Text.ElideMiddle
-                    }
-                    background: Rectangle {
-                        radius: 6
-                        color: prefixItem.highlighted ? c.accent : "transparent"
-                    }
-                    onTriggered: {
-                        root.setPrefix(modelData.path)
-                        root.refreshCurrent()
-                    }
-                }
-                onObjectAdded: (index, object) => prefixMenu.insertItem(index, object)
-                onObjectRemoved: (index, object) => prefixMenu.removeItem(object)
-            }
+            radius: 6
+            color: wmi.highlighted ? c.accent : "transparent"
         }
     }
 
-    function pageSummary() {
-        if (currentPage === 0) {
-            var running = 0
-            for (var i = 0; i < backend.apps.length; i++) if (backend.apps[i].running) running++
-            return backend.apps.length + (zh ? " 个应用" : " apps") + (running > 0 ? (zh ? " · " + running + " 个运行中" : " · " + running + " running") : "")
-        }
-        if (currentPage === 1) return backend.linux_apps.length + (zh ? " 个程序" : " apps")
-        if (currentPage === 2) return backend.procs.length + (zh ? " 个进程" : " processes")
-        return backend.dirs.length + (zh ? " 个目录" : " folders")
-    }
-
-    function prefixLabel(path) {
-        if (!path) return zh ? "没有前缀" : "No prefix"
-        var pieces = path.replace(/\/+$/, "").split("/")
-        return pieces[pieces.length - 1] || path
-    }
-
-    // ── 标题栏：左边红绿灯，中间页面名 ──────────────────────
+    // ── 标题栏：左边红绿灯，中间窗口名，右边 Windows 式按钮 ──
     header: Rectangle {
         height: 48
         color: root.configureMode ? c.window : c.sidebar
@@ -685,35 +671,96 @@ ApplicationWindow {
 
         Rectangle {
             visible: !root.configureMode
-            Layout.preferredWidth: 208
+            Layout.preferredWidth: 216
             Layout.fillHeight: true
             color: c.sidebar
 
             ColumnLayout {
                 anchors.fill: parent
-                anchors.topMargin: 16
-                anchors.bottomMargin: 14
+                anchors.topMargin: 14
+                anchors.bottomMargin: 12
                 anchors.leftMargin: 10
                 anchors.rightMargin: 10
                 spacing: 1
 
+                // 前缀：换页面时跟着换（进程页是「前缀 · 游戏」）
+                Repeater {
+                    model: root.sidebarPrefixes
+                    delegate: AbstractButton {
+                        id: prefBtn
+                        required property var modelData
+                        required property int index
+                        Layout.fillWidth: true
+                        implicitHeight: 30
+                        readonly property bool active: modelData.path === root.currentPrefix()
+                        background: Rectangle {
+                            radius: 7
+                            color: prefBtn.active ? c.rowActive : (prefBtn.hovered ? c.hover : "transparent")
+                        }
+                        contentItem: RowLayout {
+                            spacing: 8
+                            Item {
+                                Layout.leftMargin: 9
+                                implicitWidth: 8
+                                implicitHeight: 8
+                                Rectangle {
+                                    anchors.centerIn: parent
+                                    width: 7
+                                    height: 7
+                                    radius: 3.5
+                                    color: prefBtn.active ? c.accent : "transparent"
+                                    border.width: 1
+                                    border.color: prefBtn.active ? c.accent : c.faint
+                                }
+                            }
+                            Text {
+                                Layout.fillWidth: true
+                                Layout.rightMargin: 8
+                                text: root.prefixItemLabel(prefBtn.modelData)
+                                color: prefBtn.active ? c.text : c.dim
+                                font.pixelSize: 13
+                                font.weight: prefBtn.active ? Font.DemiBold : Font.Normal
+                                elide: Text.ElideRight
+                                verticalAlignment: Text.AlignVCenter
+                            }
+                        }
+                        ToolTip.visible: hovered
+                        ToolTip.delay: 700
+                        ToolTip.text: modelData.path
+                        onClicked: {
+                            root.setPrefix(modelData.path)
+                            root.refreshCurrent()
+                        }
+                    }
+                }
+
+                Item { implicitHeight: 10 }
+                Rectangle {
+                    Layout.leftMargin: 9
+                    Layout.rightMargin: 9
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 1
+                    color: c.line
+                    opacity: 0.75
+                }
                 Item { implicitHeight: 8 }
 
+                // 视图：应用 / Linux 程序 / 进程
                 Repeater {
                     model: root.pageNames.length
                     delegate: AbstractButton {
                         id: navBtn
                         required property int index
                         Layout.fillWidth: true
-                        implicitHeight: 32
+                        implicitHeight: 30
                         background: Rectangle {
                             radius: 7
                             color: navBtn.index === root.currentPage
-                                   ? (c.dark ? "#26282c" : "#e6e6ea")
+                                   ? c.rowActive
                                    : (navBtn.hovered ? c.hover : "transparent")
                         }
                         contentItem: Text {
-                            leftPadding: 9
+                            leftPadding: 27
                             text: root.pageNames[navBtn.index]
                             color: navBtn.index === root.currentPage ? c.text
                                  : (navBtn.hovered ? c.text : c.dim)
@@ -759,10 +806,9 @@ ApplicationWindow {
                 AppsPage {}
                 LinuxPage {}
                 ProcsPage {}
-                DirsPage {}
             }
 
-            // 状态栏
+            // 状态栏：状态 + 网络开关 + 当前页数量
             Rectangle {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 30
@@ -772,7 +818,7 @@ ApplicationWindow {
                     anchors.fill: parent
                     anchors.leftMargin: 16
                     anchors.rightMargin: 16
-                    spacing: 8
+                    spacing: 10
                     Rectangle {
                         width: 6
                         height: 6
@@ -787,6 +833,7 @@ ApplicationWindow {
                         font.pixelSize: 12
                         elide: Text.ElideMiddle
                     }
+                    NetChip {}
                     Text {
                         text: root.pageSummary()
                         color: c.faint
@@ -795,6 +842,40 @@ ApplicationWindow {
                 }
             }
         }
+    }
+
+    // 状态栏右侧的「独立网络」开关
+    component NetChip: AbstractButton {
+        id: chip
+        implicitHeight: 20
+        padding: 9
+        hoverEnabled: true
+        background: Rectangle {
+            radius: 10
+            color: backend.netns ? c.accentSoft : (chip.hovered ? c.hover : "transparent")
+            border.width: 1
+            border.color: backend.netns ? "transparent" : c.line
+        }
+        contentItem: RowLayout {
+            spacing: 5
+            Rectangle {
+                implicitWidth: 5
+                implicitHeight: 5
+                radius: 2.5
+                color: backend.netns ? c.accent : c.faint
+            }
+            Text {
+                text: (root.zh ? "独立网络" : "Isolated net") + " · "
+                      + (backend.netns ? (root.zh ? "开" : "on") : (root.zh ? "关" : "off"))
+                font.pixelSize: 11
+                color: backend.netns ? c.accent : c.dim
+            }
+        }
+        ToolTip.visible: hovered
+        ToolTip.delay: 500
+        ToolTip.text: root.zh ? "让这个前缀里的程序走独立网络（改 .winrun.conf，下次启动生效）"
+                              : "Put this prefix on its own network namespace"
+        onClicked: backend.set_prefix_netns(root.currentPrefix(), !backend.netns)
     }
 
     // ── 页面骨架 ────────────────────────────────────────────
@@ -832,21 +913,31 @@ ApplicationWindow {
     }
 
     component PageToolbar: RowLayout {
+        id: toolbar
+        /// 这个工具条属于哪一页（0 应用 / 1 Linux / 2 进程）
+        property int page: 0
+        signal submitted()
         default property alias trailing: trailingRow.data
         spacing: 8
-        PrefixPicker {}
-        Item { Layout.fillWidth: true }
         RowLayout { id: trailingRow; spacing: 8 }
+        Item { Layout.fillWidth: true }
         WSearchField {
             id: pageSearchField
             Layout.preferredWidth: 220
             implicitHeight: 34
-            placeholderText: root.searchHints[root.currentPage]
-            text: root.searchValues[root.currentPage]
+            placeholderText: root.searchHints[toolbar.page]
+            text: root.searchValues[toolbar.page]
             onTextEdited: {
                 var copy = root.searchValues.slice()
-                copy[root.currentPage] = text
+                copy[toolbar.page] = text
                 root.searchValues = copy
+            }
+            onAccepted: toolbar.submitted()
+        }
+        Connections {
+            target: root
+            function onSearchFocusTickChanged() {
+                if (root.currentPage === toolbar.page) pageSearchField.forceActiveFocus()
             }
         }
     }
@@ -902,7 +993,6 @@ ApplicationWindow {
     }
 
     component EmptyState: ColumnLayout {
-        property string glyph: "◌"
         property string title: ""
         property string hint: ""
         property var action: null
@@ -941,6 +1031,8 @@ ApplicationWindow {
             font.pixelSize: 12
             color: c.faint
             horizontalAlignment: Text.AlignHCenter
+            Layout.maximumWidth: 320
+            wrapMode: Text.WordWrap
         }
         WButton {
             Layout.alignment: Qt.AlignHCenter
@@ -959,7 +1051,7 @@ ApplicationWindow {
         implicitHeight: size
         Rectangle {
             anchors.fill: parent
-            radius: 9
+            radius: Math.round(size * 0.24)
             color: c.group
             border.width: 1
             border.color: c.line
@@ -982,225 +1074,501 @@ ApplicationWindow {
         }
     }
 
+    // 检查器里的一条键值
+    component DetailRow: ColumnLayout {
+        id: detailRow
+        property string label: ""
+        property string value: "—"
+        property string hint: ""
+        spacing: 2
+        Text {
+            text: detailRow.label
+            font.pixelSize: 11
+            color: c.faint
+        }
+        Text {
+            id: detailValue
+            Layout.fillWidth: true
+            text: detailRow.value
+            font.pixelSize: 12
+            color: c.text
+            wrapMode: Text.WrapAnywhere
+            HoverHandler { id: detailHover }
+        }
+        ToolTip.visible: detailHover.hovered && detailRow.hint !== ""
+        ToolTip.delay: 700
+        ToolTip.text: detailRow.hint
+    }
+
     // ── 页面：应用 ──────────────────────────────────────────
     component AppsPage: Item {
-        ColumnLayout {
+        id: appsPage
+        property int selectedIndex: -1
+        /// 选中的是「哪一个应用」而不是「第几行」：刷新列表后选中不会跳到别人身上
+        property string selectedId: ""
+        property var rows: []
+
+        function select(index) {
+            if (index < 0 || index >= rows.length) { clearSelection(); return }
+            selectedIndex = index
+            selectedId = rows[index].appId
+        }
+        function clearSelection() {
+            selectedIndex = -1
+            selectedId = ""
+        }
+        function rebuild() {
+            var q = root.searchValues[0].toLowerCase()
+            var source = backend.apps
+            var out = []
+            for (var i = 0; i < source.length; i++) {
+                var item = source[i]
+                if (q === "") { out.push(item); continue }
+                var hay = (item.name + " " + item.detail + " " + item.meta + " " + item.path).toLowerCase()
+                if (hay.indexOf(q) >= 0) out.push(item)
+            }
+            rows = out
+            if (selectedId !== "") {
+                var found = -1
+                for (var j = 0; j < out.length; j++) {
+                    if (out[j].appId === selectedId) { found = j; break }
+                }
+                selectedIndex = found
+                if (found < 0) selectedId = ""
+            } else if (selectedIndex >= out.length) {
+                selectedIndex = -1
+            }
+        }
+        function moveSelection(step) {
+            if (rows.length === 0) return
+            var next = (selectedIndex < 0 ? (step > 0 ? 0 : rows.length - 1) : selectedIndex + step)
+            if (next < 0) next = 0
+            if (next > rows.length - 1) next = rows.length - 1
+            select(next)
+            appsList.positionViewAtIndex(next, ListView.Contain)
+        }
+        function runItem(item) {
+            if (!item) return
+            if (item.isSteam && item.steamAppid)
+                backend.run_steam_game(item.steamAppid, item.path, root.appsPrefix)
+            else
+                backend.run_path(item.path, root.appsPrefix, item.runner)
+        }
+        function openLog(item) {
+            if (!item) return
+            root.currentLogAppId = item.appId
+            root.logTitle = item.name
+            logTextArea.text = backend.log_text(item.appId)
+            logPopup.open()
+        }
+        function openFolder(item) {
+            if (!item) return
+            var p = item.path
+            var cut = Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\"))
+            backend.open_folder(cut > 0 ? p.substring(0, cut) : p)
+        }
+
+        readonly property var selectedApp: (selectedIndex >= 0 && selectedIndex < rows.length)
+                                             ? rows[selectedIndex] : null
+        readonly property string selectedLog: selectedApp && selectedApp.hasLog
+                                              ? backend.log_tail(selectedApp.appId, 10) : ""
+
+        Component.onCompleted: { rebuild(); appsList.forceActiveFocus() }
+        onVisibleChanged: if (visible) { rebuild(); appsList.forceActiveFocus() }
+        Connections { target: backend; function onAppsChanged() { appsPage.rebuild() } }
+        Connections { target: root; function onSearchValuesChanged() { appsPage.rebuild() } }
+
+        RowLayout {
             anchors.fill: parent
-            anchors.margins: 24
-            spacing: 16
+            spacing: 0
 
-            PageHeader {
-                Layout.fillWidth: true
-                WAccentButton {
-                    text: root.zh ? "添加应用" : "Add App"
-                    onClicked: backend.new_config(root.appsPrefix)
-                }
-            }
-
-            PageToolbar {
-                Layout.fillWidth: true
-                WAccentButton {
-                    visible: backend.update_available
-                    text: root.zh ? "更新运行器" : "Update Runners"
-                    ToolTip.visible: hovered
-                    ToolTip.delay: 300
-                    ToolTip.text: backend.update_details
-                    onClicked: root.confirm(root.zh ? "更新运行器" : "Update Runners",
-                        (root.zh ? "以下运行器有新版本可用，是否立即更新？\n\n" : "Updates available:\n\n")
-                        + backend.update_details,
-                        function () { backend.update_runners_now() })
-                }
-            }
-
-            Item {
+            ColumnLayout {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
+                Layout.margins: 24
+                spacing: 16
 
-                GroupList {
-                    id: appsList
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.top: parent.top
-                    height: Math.min(Math.max(contentHeight, 1) + 2, parent.height)
-                    model: {
-                        var q = root.searchValues[0].toLowerCase()
-                        var source = backend.apps
-                        if (q === "") return source
-                        var out = []
-                        for (var i = 0; i < source.length; i++) {
-                            var item = source[i]
-                            var hay = (item.name + " " + item.detail + " " + item.path).toLowerCase()
-                            if (hay.indexOf(q) >= 0) out.push(item)
+                PageHeader {
+                    Layout.fillWidth: true
+                    WAccentButton {
+                        id: addBtn
+                        text: (root.zh ? "添加应用" : "Add App") + "  ⌄"
+                        onClicked: addMenu.popup(addBtn, addBtn.width - addMenu.width, addBtn.height + 4)
+                        Menu {
+                            id: addMenu
+                            width: 220
+                            padding: 4
+                            background: Rectangle { radius: 10; color: c.row; border.width: 1; border.color: c.line }
+                            WMenuItem {
+                                text: root.zh ? "选择 exe 文件…" : "Choose an .exe…"
+                                onTriggered: addExeDialog.open()
+                            }
+                            WMenuItem {
+                                text: root.zh ? "从安装目录挑选…" : "Pick from a folder…"
+                                onTriggered: {
+                                    backend.refresh_page("dirs", root.appsPrefix)
+                                    dirsPopup.open()
+                                }
+                            }
                         }
-                        return out
                     }
-                    delegate: Rectangle {
-                        width: appsList.width
-                        height: 64
-                        color: rowMouse.containsMouse ? c.rowHover : "transparent"
+                }
 
-                        Rectangle {
-                            anchors.bottom: parent.bottom
-                            x: 62
-                            width: parent.width - 62
-                            height: 1
-                            color: c.line
-                            visible: index < appsList.count - 1
+                PageToolbar {
+                    Layout.fillWidth: true
+                    page: 0
+                    onSubmitted: appsList.forceActiveFocus()
+                    WAccentButton {
+                        visible: backend.update_available
+                        text: root.zh ? "更新运行器" : "Update Runners"
+                        ToolTip.visible: hovered
+                        ToolTip.delay: 300
+                        ToolTip.text: backend.update_details
+                        onClicked: root.confirm(root.zh ? "更新运行器" : "Update Runners",
+                            (root.zh ? "以下运行器有新版本可用，是否立即更新？\n\n" : "Updates available:\n\n")
+                            + backend.update_details,
+                            function () { backend.update_runners_now() })
+                    }
+                }
+
+                Item {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+
+                    GroupList {
+                        id: appsList
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        height: Math.min(Math.max(contentHeight, 1) + 2, parent.height)
+                        model: appsPage.rows
+                        focus: true
+                        currentIndex: appsPage.selectedIndex >= 0 ? appsPage.selectedIndex : -1
+                        Keys.onDownPressed: function (event) { appsPage.moveSelection(1); event.accepted = true }
+                        Keys.onUpPressed: function (event) { appsPage.moveSelection(-1); event.accepted = true }
+                        Keys.onReturnPressed: function (event) {
+                            appsPage.runItem(appsPage.selectedApp)
+                            event.accepted = true
                         }
 
-                        MouseArea {
-                            id: rowMouse
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            acceptedButtons: Qt.NoButton
-                        }
+                        delegate: Rectangle {
+                            id: appRow
+                            width: appsList.width
+                            height: 62
+                            readonly property bool active: appsPage.selectedIndex === index
+                            color: active ? c.rowActive : (rowMouse.containsMouse ? c.rowHover : "transparent")
 
-                        RowLayout {
-                            anchors.fill: parent
-                            anchors.leftMargin: 14
-                            anchors.rightMargin: 12
-                            spacing: 12
-
-                            AppIcon {
-                                source: modelData.icon && modelData.icon !== "winrun" ? modelData.icon : ""
+                            Rectangle {
+                                anchors.bottom: parent.bottom
+                                x: 62
+                                width: parent.width - 62
+                                height: 1
+                                color: c.line
+                                visible: index < appsList.count - 1
                             }
 
-                            ColumnLayout {
-                                Layout.fillWidth: true
-                                spacing: 2
-                                RowLayout {
-                                    spacing: 6
-                                    Text {
-                                        text: modelData.name
-                                        color: c.text
-                                        font.pixelSize: 14
-                                        font.weight: Font.DemiBold
-                                        elide: Text.ElideRight
-                                        Layout.maximumWidth: parent.width - 70
-                                    }
-                                    Rectangle {
-                                        visible: modelData.running
-                                        radius: 4
-                                        color: c.accentSoft
-                                        implicitWidth: runningLabel.implicitWidth + 10
-                                        implicitHeight: 16
-                                        Text {
-                                            id: runningLabel
-                                            anchors.centerIn: parent
-                                            text: root.zh ? "运行中" : "Running"
-                                            font.pixelSize: 10
-                                            color: c.accent
-                                        }
-                                    }
-                                }
-                                Text {
-                                    text: modelData.detail
-                                    color: c.dim
-                                    font.pixelSize: 12
-                                    elide: Text.ElideMiddle
-                                    Layout.fillWidth: true
+                            MouseArea {
+                                id: rowMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                onClicked: {
+                                    appsPage.select(index)
+                                    appsList.forceActiveFocus()
                                 }
                             }
 
                             RowLayout {
-                                spacing: 6
+                                anchors.fill: parent
+                                anchors.leftMargin: 14
+                                anchors.rightMargin: 12
+                                spacing: 12
 
-                                WButton {
-                                    visible: modelData.hasLog
-                                    text: root.zh ? "日志" : "Log"
-                                    onClicked: {
-                                        root.currentLogAppId = modelData.appId
-                                        root.logTitle = modelData.name
-                                        logTextArea.text = backend.log_text(modelData.appId)
-                                        logPopup.open()
+                                AppIcon {
+                                    source: modelData.icon && modelData.icon !== "winrun" ? modelData.icon : ""
+                                }
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 2
+                                    RowLayout {
+                                        spacing: 6
+                                        Text {
+                                            text: modelData.name
+                                            color: c.text
+                                            font.pixelSize: 14
+                                            font.weight: Font.DemiBold
+                                            elide: Text.ElideRight
+                                            Layout.maximumWidth: parent.width - 70
+                                        }
+                                        Rectangle {
+                                            visible: modelData.running
+                                            radius: 4
+                                            color: c.accentSoft
+                                            implicitWidth: runningLabel.implicitWidth + 10
+                                            implicitHeight: 16
+                                            Text {
+                                                id: runningLabel
+                                                anchors.centerIn: parent
+                                                text: root.zh ? "运行中" : "Running"
+                                                font.pixelSize: 10
+                                                color: c.accent
+                                            }
+                                        }
+                                    }
+                                    Text {
+                                        text: modelData.detail + (modelData.meta ? " · " + modelData.meta : "")
+                                        color: c.dim
+                                        font.pixelSize: 12
+                                        elide: Text.ElideRight
+                                        Layout.fillWidth: true
                                     }
                                 }
-                                WDangerButton {
-                                    visible: modelData.running
-                                    text: root.zh ? "关闭" : "Close"
-                                    onClicked: backend.close_app(modelData.appId, root.appsPrefix)
-                                }
+
                                 WAccentButton {
                                     visible: !modelData.running
                                     text: root.zh ? "运行" : "Run"
                                     ToolTip.visible: modelData.isSteam && hovered
                                     ToolTip.delay: 400
                                     ToolTip.text: root.zh ? "通过 Steam 启动" : "Start through Steam"
-                                    onClicked: {
-                                        if (modelData.isSteam && modelData.steamAppid)
-                                            backend.run_steam_game(modelData.steamAppid, modelData.path, root.appsPrefix)
-                                        else
-                                            backend.run_path(modelData.path, root.appsPrefix, modelData.runner)
-                                    }
+                                    onClicked: appsPage.runItem(modelData)
                                 }
-                                WButton {
-                                    visible: modelData.canConfig
-                                    text: root.zh ? "设置" : "Settings"
-                                    onClicked: backend.open_config(modelData.appId, root.appsPrefix)
+                                WDangerButton {
+                                    visible: modelData.running
+                                    text: root.zh ? "关闭" : "Close"
+                                    onClicked: backend.close_app(modelData.appId, root.appsPrefix)
                                 }
-                            }
 
-                            WIconButton {
-                                id: moreBtn
-                                glyph: "⋯"
-                                onClicked: appMenu.popup(moreBtn, -160, moreBtn.height + 4)
-                                Menu {
-                                    id: appMenu
-                                    width: 190
-                                    padding: 4
-                                    background: Rectangle { radius: 10; color: c.row; border.width: 1; border.color: c.line }
-                                    delegate: MenuItem {
-                                        id: menuItem
-                                        height: 32
-                                        contentItem: Text {
-                                            leftPadding: 8
-                                            text: menuItem.text
-                                            color: menuItem.highlighted ? "#ffffff" : c.text
-                                            font.pixelSize: 13
-                                            verticalAlignment: Text.AlignVCenter
+                                WIconButton {
+                                    id: moreBtn
+                                    glyph: "⋯"
+                                    onClicked: appMenu.popup(moreBtn, -160, moreBtn.height + 4)
+                                    Menu {
+                                        id: appMenu
+                                        width: 190
+                                        padding: 4
+                                        background: Rectangle { radius: 10; color: c.row; border.width: 1; border.color: c.line }
+                                        WMenuItem {
+                                            text: root.zh ? "查看详情" : "Show Details"
+                                            onTriggered: {
+                                                appsPage.select(index)
+                                                appsList.forceActiveFocus()
+                                            }
                                         }
-                                        background: Rectangle {
-                                            radius: 6
-                                            color: menuItem.highlighted ? c.accent : "transparent"
+                                        WMenuItem {
+                                            visible: modelData.hasLog
+                                            text: root.zh ? "运行日志" : "Run Log"
+                                            onTriggered: appsPage.openLog(modelData)
                                         }
-                                    }
-                                    MenuItem { text: root.zh ? "重命名" : "Rename"
-                                        onTriggered: {
-                                            renameField.text = modelData.name
-                                            root.renameTarget = modelData.appId
-                                            renamePopup.open()
+                                        WMenuItem {
+                                            visible: modelData.canConfig
+                                            text: root.zh ? "运行设置" : "Run Settings"
+                                            onTriggered: backend.open_config(modelData.appId, root.appsPrefix)
                                         }
-                                    }
-                                    MenuItem { text: root.zh ? "导出到应用列表" : "Export to App List"
-                                        onTriggered: backend.export_app(modelData.appId, root.appsPrefix)
-                                    }
-                                    MenuItem { text: root.zh ? "打开所在目录" : "Open Folder"
-                                        onTriggered: {
-                                            var p = modelData.path
-                                            var cut = Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\"))
-                                            backend.open_folder(cut > 0 ? p.substring(0, cut) : p)
+                                        WMenuItem {
+                                            text: root.zh ? "重命名" : "Rename"
+                                            onTriggered: {
+                                                renameField.text = modelData.name
+                                                root.renameTarget = modelData.appId
+                                                renamePopup.open()
+                                            }
                                         }
-                                    }
-                                    MenuSeparator { contentItem: Rectangle { implicitHeight: 1; color: c.line } }
-                                    MenuItem { text: root.zh ? "删除配置" : "Delete Config"
-                                        onTriggered: root.confirm(root.zh ? "删除配置" : "Delete Config",
-                                            root.zh ? "删除这个应用保存的配置？" : "Delete this app's saved settings?",
-                                            function () { backend.delete_app(modelData.appId, root.appsPrefix) })
+                                        WMenuItem {
+                                            text: root.zh ? "导出到应用列表" : "Export to App List"
+                                            onTriggered: backend.export_app(modelData.appId, root.appsPrefix)
+                                        }
+                                        WMenuItem {
+                                            text: root.zh ? "打开所在目录" : "Open Folder"
+                                            onTriggered: appsPage.openFolder(modelData)
+                                        }
+                                        MenuSeparator { contentItem: Rectangle { implicitHeight: 1; color: c.line } }
+                                        WMenuItem {
+                                            text: root.zh ? "删除配置" : "Delete Config"
+                                            onTriggered: root.confirm(root.zh ? "删除配置" : "Delete Config",
+                                                root.zh ? "删除这个应用保存的配置？" : "Delete this app's saved settings?",
+                                                function () { backend.delete_app(modelData.appId, root.appsPrefix) })
+                                        }
                                     }
                                 }
                             }
                         }
                     }
+
+                    EmptyState {
+                        title: root.zh ? "还没有应用" : "No apps yet"
+                        hint: root.zh ? "点“添加应用”，挑一个 exe，或者从安装目录里选。"
+                                      : "Add one from an .exe, or pick it from an install folder."
+                        actionText: root.zh ? "选择 exe 文件" : "Choose an .exe"
+                        action: function () { addExeDialog.open() }
+                        visible: appsList.count === 0
+                    }
+                }
+            }
+
+            // 检查器：选中一行才出现
+            Rectangle {
+                visible: appsPage.selectedIndex >= 0
+                Layout.preferredWidth: 1
+                Layout.fillHeight: true
+                color: c.line
+            }
+
+            DetailPane {
+                visible: appsPage.selectedIndex >= 0
+                Layout.preferredWidth: 320
+                Layout.fillHeight: true
+                app: appsPage.selectedApp
+                logTail: appsPage.selectedLog
+            }
+        }
+    }
+
+    // 右侧检查器
+    component DetailPane: Rectangle {
+        id: pane
+        property var app: null
+        property string logTail: ""
+        color: c.window
+
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: 18
+            spacing: 14
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 12
+                AppIcon {
+                    size: 52
+                    source: pane.app && pane.app.icon && pane.app.icon !== "winrun" ? pane.app.icon : ""
+                }
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 3
+                    Text {
+                        Layout.fillWidth: true
+                        text: pane.app ? pane.app.name : ""
+                        font.pixelSize: 15
+                        font.weight: Font.DemiBold
+                        color: c.text
+                        elide: Text.ElideRight
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        text: pane.app
+                              ? (pane.app.detail + (pane.app.meta ? " · " + pane.app.meta : ""))
+                              : ""
+                        font.pixelSize: 12
+                        color: c.dim
+                        elide: Text.ElideRight
+                    }
+                }
+                WIconButton {
+                    glyph: "✕"
+                    ToolTip.text: root.zh ? "收起" : "Hide"
+                    onClicked: appsPage.clearSelection()
+                }
+            }
+
+            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: c.line }
+
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 12
+
+                DetailRow {
+                    Layout.fillWidth: true
+                    label: root.zh ? "路径" : "Path"
+                    value: pane.app ? (pane.app.winPath || pane.app.path) : ""
+                    hint: pane.app ? pane.app.path : ""
+                }
+                DetailRow {
+                    Layout.fillWidth: true
+                    label: root.zh ? "运行器" : "Runner"
+                    value: pane.app ? root.shortPath(pane.app.runner) : ""
+                }
+                DetailRow {
+                    Layout.fillWidth: true
+                    label: root.zh ? "类型" : "Kind"
+                    value: root.kindLabel(pane.app)
+                }
+            }
+
+            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: c.line }
+
+            Text {
+                Layout.fillWidth: true
+                text: root.zh ? "最近日志" : "Recent log"
+                font.pixelSize: 11
+                color: c.faint
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                Layout.minimumHeight: 80
+                radius: 8
+                color: c.group
+                border.width: 1
+                border.color: c.line
+
+                Text {
+                    anchors.centerIn: parent
+                    visible: pane.logTail === ""
+                    text: root.zh ? "还没有运行日志" : "No log yet"
+                    font.pixelSize: 12
+                    color: c.faint
                 }
 
-                EmptyState {
-                    glyph: "◫"
-                    title: root.zh ? "还没有应用" : "No apps yet"
-                    hint: root.zh ? "点“添加应用”，或在“目录”页从一个 exe 生成配置。"
-                                  : "Add one, or create it from an executable in Folders."
-                    actionText: root.zh ? "添加应用" : "Add App"
-                    action: function () { backend.new_config(root.appsPrefix) }
-                    visible: appsList.count === 0
+                Flickable {
+                    anchors.fill: parent
+                    anchors.margins: 9
+                    visible: pane.logTail !== ""
+                    clip: true
+                    // 日志行不折行（折了反而更难读），宽了就横向拖
+                    contentWidth: Math.max(width, tailText.implicitWidth)
+                    contentHeight: tailText.implicitHeight
+                    boundsBehavior: Flickable.StopAtBounds
+                    ScrollBar.horizontal: ScrollBar { policy: ScrollBar.AsNeeded }
+                    Text {
+                        id: tailText
+                        text: pane.logTail
+                        font.family: "monospace"
+                        font.pixelSize: 11
+                        lineHeight: 1.25
+                        color: c.dim
+                        wrapMode: Text.NoWrap
+                    }
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 6
+
+                WAccentButton {
+                    visible: pane.app && !pane.app.running
+                    text: root.zh ? "运行" : "Run"
+                    onClicked: appsPage.runItem(pane.app)
+                }
+                WDangerButton {
+                    visible: pane.app && pane.app.running
+                    text: root.zh ? "关闭" : "Close"
+                    onClicked: backend.close_app(pane.app.appId, root.appsPrefix)
+                }
+                WButton {
+                    visible: pane.app && pane.app.canConfig
+                    outlined: true
+                    text: root.zh ? "设置" : "Settings"
+                    onClicked: backend.open_config(pane.app.appId, root.appsPrefix)
+                }
+                Item { Layout.fillWidth: true }
+                WButton {
+                    text: root.zh ? "目录" : "Folder"
+                    onClicked: appsPage.openFolder(pane.app)
+                }
+                WButton {
+                    text: root.zh ? "日志" : "Log"
+                    onClicked: appsPage.openLog(pane.app)
                 }
             }
         }
@@ -1208,12 +1576,32 @@ ApplicationWindow {
 
     // ── 页面：Linux 程序 ────────────────────────────────────
     component LinuxPage: Item {
+        id: linuxPage
+        property var rows: []
+
+        function rebuild() {
+            var q = root.searchValues[1].toLowerCase()
+            var source = backend.linux_apps
+            var out = []
+            for (var i = 0; i < source.length; i++) {
+                var item = source[i]
+                if (q === "") { out.push(item); continue }
+                var hay = (item.name + " " + item.id + " " + item.path).toLowerCase()
+                if (hay.indexOf(q) >= 0) out.push(item)
+            }
+            rows = out
+        }
         function launchCustom() {
             var cmd = customCmd.text.trim()
             if (cmd === "") return
             customCmd.text = ""
             backend.launch_linux(root.linuxPrefix, cmd)
         }
+
+        Component.onCompleted: rebuild()
+        onVisibleChanged: if (visible) rebuild()
+        Connections { target: backend; function onLinux_appsChanged() { linuxPage.rebuild() } }
+        Connections { target: root; function onSearchValuesChanged() { linuxPage.rebuild() } }
 
         ColumnLayout {
             anchors.fill: parent
@@ -1224,41 +1612,34 @@ ApplicationWindow {
 
             PageToolbar {
                 Layout.fillWidth: true
+                page: 1
+                onSubmitted: customCmd.forceActiveFocus()
                 WField {
                     id: customCmd
                     Layout.preferredWidth: 240
                     implicitHeight: 32
                     placeholderText: root.zh ? "自定义命令，如 steam" : "Custom command, e.g. steam"
-                    onAccepted: launchCustom()
+                    onAccepted: linuxPage.launchCustom()
                 }
                 WAccentButton {
                     implicitHeight: 32
                     text: root.zh ? "运行命令" : "Run"
-                    onClicked: launchCustom()
+                    onClicked: linuxPage.launchCustom()
                 }
             }
 
             Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
+
                 GroupList {
                     id: linuxList
                     anchors.left: parent.left
                     anchors.right: parent.right
                     anchors.top: parent.top
                     height: Math.min(Math.max(contentHeight, 1) + 2, parent.height)
-                    model: {
-                        var q = root.searchValues[1].toLowerCase()
-                        var source = backend.linux_apps
-                        if (q === "") return source
-                        var out = []
-                        for (var i = 0; i < source.length; i++) {
-                            var item = source[i]
-                            var hay = (item.name + " " + item.id + " " + item.path).toLowerCase()
-                            if (hay.indexOf(q) >= 0) out.push(item)
-                        }
-                        return out
-                    }
+                    model: linuxPage.rows
+
                     delegate: Rectangle {
                         width: linuxList.width
                         height: 62
@@ -1290,7 +1671,7 @@ ApplicationWindow {
                                     Layout.fillWidth: true
                                 }
                                 Text {
-                                    text: modelData.path
+                                    text: modelData.id
                                     color: c.dim
                                     font.pixelSize: 12
                                     elide: Text.ElideMiddle
@@ -1304,8 +1685,8 @@ ApplicationWindow {
                         }
                     }
                 }
+
                 EmptyState {
-                    glyph: "⌗"
                     title: root.zh ? "没有可启动的程序" : "No launchable apps"
                     hint: root.zh ? "系统里的 .desktop 程序会出现在这里。" : "Applications from .desktop files show up here."
                     visible: linuxList.count === 0
@@ -1316,6 +1697,27 @@ ApplicationWindow {
 
     // ── 页面：进程 ──────────────────────────────────────────
     component ProcsPage: Item {
+        id: procsPage
+        property var rows: []
+
+        function rebuild() {
+            var q = root.searchValues[2].toLowerCase()
+            var source = backend.procs
+            var out = []
+            for (var i = 0; i < source.length; i++) {
+                var item = source[i]
+                if (q === "") { out.push(item); continue }
+                var hay = (item.title + " " + item.command).toLowerCase()
+                if (hay.indexOf(q) >= 0) out.push(item)
+            }
+            rows = out
+        }
+
+        Component.onCompleted: rebuild()
+        onVisibleChanged: if (visible) rebuild()
+        Connections { target: backend; function onProcsChanged() { procsPage.rebuild() } }
+        Connections { target: root; function onSearchValuesChanged() { procsPage.rebuild() } }
+
         ColumnLayout {
             anchors.fill: parent
             anchors.margins: 24
@@ -1325,6 +1727,7 @@ ApplicationWindow {
 
             PageToolbar {
                 Layout.fillWidth: true
+                page: 2
                 WButton {
                     outlined: true
                     text: root.zh ? "刷新" : "Refresh"
@@ -1339,24 +1742,15 @@ ApplicationWindow {
             Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
+
                 GroupList {
                     id: procsList
                     anchors.left: parent.left
                     anchors.right: parent.right
                     anchors.top: parent.top
                     height: Math.min(Math.max(contentHeight, 1) + 2, parent.height)
-                    model: {
-                        var q = root.searchValues[2].toLowerCase()
-                        var source = backend.procs
-                        if (q === "") return source
-                        var out = []
-                        for (var i = 0; i < source.length; i++) {
-                            var item = source[i]
-                            var hay = (item.title + " " + item.command).toLowerCase()
-                            if (hay.indexOf(q) >= 0) out.push(item)
-                        }
-                        return out
-                    }
+                    model: procsPage.rows
+
                     delegate: Rectangle {
                         width: procsList.width
                         height: 58
@@ -1401,125 +1795,11 @@ ApplicationWindow {
                         }
                     }
                 }
+
                 EmptyState {
-                    glyph: "◔"
                     title: root.zh ? "没有运行中的进程" : "Nothing running"
                     hint: root.zh ? "这个前缀里的 Windows 程序都没在跑。" : "No Windows programs are running in this prefix."
                     visible: procsList.count === 0
-                }
-            }
-        }
-    }
-
-    // ── 页面：目录 ──────────────────────────────────────────
-    component DirsPage: Item {
-        ColumnLayout {
-            anchors.fill: parent
-            anchors.margins: 24
-            spacing: 16
-
-            PageHeader { Layout.fillWidth: true }
-            PageToolbar { Layout.fillWidth: true }
-
-            Item {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                GroupList {
-                    id: dirsList
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.top: parent.top
-                    height: Math.min(Math.max(contentHeight, 1) + 2, parent.height)
-                    model: {
-                        var q = root.searchValues[3].toLowerCase()
-                        var source = backend.dirs
-                        if (q === "") return source
-                        var out = []
-                        for (var i = 0; i < source.length; i++) {
-                            var item = source[i]
-                            var hay = (item.name + " " + item.detail + " " + item.path).toLowerCase()
-                            if (hay.indexOf(q) >= 0) out.push(item)
-                        }
-                        return out
-                    }
-                    delegate: Rectangle {
-                        width: dirsList.width
-                        height: 62
-                        color: dirsMouse.containsMouse ? c.rowHover : "transparent"
-                        Rectangle {
-                            anchors.bottom: parent.bottom
-                            x: 62
-                            width: parent.width - 62
-                            height: 1
-                            color: c.line
-                            visible: index < dirsList.count - 1
-                        }
-                        MouseArea { id: dirsMouse; anchors.fill: parent; hoverEnabled: true; acceptedButtons: Qt.NoButton }
-                        RowLayout {
-                            anchors.fill: parent
-                            anchors.leftMargin: 14
-                            anchors.rightMargin: 12
-                            spacing: 12
-                            Rectangle {
-                                width: 36; height: 36; radius: 9
-                                color: c.group
-                                border.width: 1
-                                border.color: c.line
-                                Text {
-                                    anchors.centerIn: parent
-                                    text: "▤"
-                                    font.pixelSize: 16
-                                    color: c.faint
-                                }
-                            }
-                            ColumnLayout {
-                                Layout.fillWidth: true
-                                spacing: 2
-                                Text {
-                                    text: modelData.name
-                                    color: c.text
-                                    font.pixelSize: 13
-                                    font.weight: Font.DemiBold
-                                    elide: Text.ElideRight
-                                    Layout.fillWidth: true
-                                }
-                                Text {
-                                    text: modelData.detail
-                                    color: c.dim
-                                    font.pixelSize: 12
-                                    elide: Text.ElideMiddle
-                                    Layout.fillWidth: true
-                                }
-                            }
-                            RowLayout {
-                                spacing: 6
-                                WAccentButton {
-                                    text: root.zh ? "查看 exe" : "Executables"
-                                    onClicked: backend.show_dir_exes(root.dirsPrefix, modelData.path)
-                                }
-                                WButton {
-                                    text: root.zh ? "打开" : "Open"
-                                    onClicked: backend.open_folder(modelData.path)
-                                }
-                                WDangerButton {
-                                    visible: modelData.canDelete
-                                    text: root.zh ? "删除" : "Delete"
-                                    onClicked: root.confirm(root.zh ? "删除安装目录" : "Delete Folder",
-                                        (root.zh ? "将永久删除以下目录及其中所有文件：\n\n" : "This deletes the folder and everything inside:\n\n")
-                                        + modelData.path
-                                        + (root.zh ? "\n\n不会运行 Windows 卸载程序，可能留下注册表和配置残留。"
-                                                   : "\n\nThis does not run the Windows uninstaller."),
-                                        function () { backend.delete_install_dir(modelData.path) })
-                                }
-                            }
-                        }
-                    }
-                }
-                EmptyState {
-                    glyph: "▤"
-                    title: root.zh ? "没有找到安装目录" : "No install folders"
-                    hint: root.zh ? "前缀里还没有含 exe 的目录。" : "No folder in this prefix contains executables."
-                    visible: dirsList.count === 0
                 }
             }
         }
@@ -1529,6 +1809,7 @@ ApplicationWindow {
     Popup {
         id: confirmPopup
         modal: true
+        Overlay.modal: Rectangle { color: c.dark ? "#99000000" : "#40000000" }
         closePolicy: Popup.CloseOnEscape
         anchors.centerIn: Overlay.overlay
         width: 460
@@ -1572,6 +1853,7 @@ ApplicationWindow {
     Popup {
         id: renamePopup
         modal: true
+        Overlay.modal: Rectangle { color: c.dark ? "#99000000" : "#40000000" }
         closePolicy: Popup.CloseOnEscape
         anchors.centerIn: Overlay.overlay
         width: 400
@@ -1601,6 +1883,7 @@ ApplicationWindow {
     Popup {
         id: logPopup
         modal: true
+        Overlay.modal: Rectangle { color: c.dark ? "#99000000" : "#40000000" }
         closePolicy: Popup.CloseOnEscape
         anchors.centerIn: Overlay.overlay
         width: 880
@@ -1658,10 +1941,136 @@ ApplicationWindow {
         }
     }
 
+    // ── 弹层：挑一个安装目录 ────────────────────────────────
+    Popup {
+        id: dirsPopup
+        modal: true
+        Overlay.modal: Rectangle { color: c.dark ? "#99000000" : "#40000000" }
+        closePolicy: Popup.CloseOnEscape
+        anchors.centerIn: Overlay.overlay
+        width: 660
+        height: 540
+        padding: 20
+        background: Rectangle { radius: 14; color: c.row; border.width: 1; border.color: c.line }
+        contentItem: ColumnLayout {
+            spacing: 12
+            RowLayout {
+                Layout.fillWidth: true
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 2
+                    Text {
+                        text: root.zh ? "从安装目录挑选" : "Pick from a folder"
+                        font.pixelSize: 15
+                        font.weight: Font.DemiBold
+                        color: c.text
+                    }
+                    Text {
+                        text: root.zh ? "选一个文件夹，再从里面的 exe 里挑要加的程序。"
+                                      : "Choose a folder, then pick the executable inside it."
+                        font.pixelSize: 12
+                        color: c.dim
+                    }
+                }
+                WIconButton { glyph: "✕"; onClicked: dirsPopup.close() }
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                radius: 10
+                color: c.group
+                border.width: 1
+                border.color: c.line
+                clip: true
+
+                ListView {
+                    id: dirsPicker
+                    anchors.fill: parent
+                    anchors.margins: 4
+                    clip: true
+                    model: backend.dirs
+                    delegate: AbstractButton {
+                        id: dirItem
+                        width: dirsPicker.width
+                        height: 54
+                        background: Rectangle {
+                            radius: 8
+                            color: dirItem.hovered ? c.rowHover : "transparent"
+                        }
+                        contentItem: RowLayout {
+                            spacing: 12
+                            Rectangle {
+                                Layout.leftMargin: 8
+                                width: 32
+                                height: 32
+                                radius: 8
+                                color: c.row
+                                border.width: 1
+                                border.color: c.line
+                                Text { anchors.centerIn: parent; text: "▤"; font.pixelSize: 14; color: c.faint }
+                            }
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 2
+                                Text {
+                                    text: modelData.name
+                                    color: c.text
+                                    font.pixelSize: 13
+                                    font.weight: Font.DemiBold
+                                    elide: Text.ElideRight
+                                    Layout.fillWidth: true
+                                }
+                                Text {
+                                    text: modelData.detail
+                                    color: c.dim
+                                    font.pixelSize: 11
+                                    elide: Text.ElideMiddle
+                                    Layout.fillWidth: true
+                                }
+                            }
+                            Text {
+                                Layout.rightMargin: 10
+                                text: "›"
+                                font.pixelSize: 15
+                                color: c.faint
+                            }
+                        }
+                        onClicked: {
+                            backend.show_dir_exes(root.appsPrefix, modelData.path)
+                            dirsPopup.close()
+                        }
+                    }
+                }
+
+                Text {
+                    anchors.centerIn: parent
+                    visible: backend.dirs.length === 0
+                    text: root.zh ? "这个前缀里还没有含 exe 的目录" : "No folder in this prefix contains executables"
+                    font.pixelSize: 12
+                    color: c.faint
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+                WButton {
+                    outlined: true
+                    text: root.zh ? "刷新" : "Refresh"
+                    onClicked: backend.refresh_page("dirs", root.appsPrefix)
+                }
+                Item { Layout.fillWidth: true }
+                WButton { text: root.zh ? "取消" : "Cancel"; onClicked: dirsPopup.close() }
+            }
+        }
+    }
+
     // ── 弹层：目录里的 exe ──────────────────────────────────
     Popup {
         id: exesPopup
         modal: true
+        Overlay.modal: Rectangle { color: c.dark ? "#99000000" : "#40000000" }
         closePolicy: Popup.CloseOnEscape
         anchors.centerIn: Overlay.overlay
         width: 720
@@ -1708,13 +2117,13 @@ ApplicationWindow {
                         WAccentButton {
                             text: root.zh ? "加入应用" : "Add"
                             onClicked: {
-                                backend.config_from_exe(root.dirsPrefix, modelData.path)
+                                backend.config_from_exe(root.appsPrefix, modelData.path)
                                 exesPopup.close()
                             }
                         }
                         WButton {
                             text: root.zh ? "运行" : "Run"
-                            onClicked: backend.run_path(modelData.path, root.dirsPrefix, "")
+                            onClicked: backend.run_path(modelData.path, root.appsPrefix, "")
                         }
                     }
                 }
@@ -1726,6 +2135,13 @@ ApplicationWindow {
                 WButton { text: root.zh ? "关闭" : "Close"; onClicked: exesPopup.close() }
             }
         }
+    }
+
+    // 「添加应用 → 选择 exe 文件」用的选择器
+    FileDialog {
+        id: addExeDialog
+        nameFilters: ["Windows 程序 (*.exe)"]
+        onAccepted: backend.config_from_exe(root.appsPrefix, selectedFile.toString().replace("file://", ""))
     }
 
     // ── 弹层：运行设置 ──────────────────────────────────────
@@ -1752,13 +2168,14 @@ ApplicationWindow {
     Popup {
         id: configDialog
         modal: true
+        Overlay.modal: Rectangle { color: c.dark ? "#99000000" : "#40000000" }
         closePolicy: Popup.CloseOnEscape
         width: 600
         // 弹层挂在 Overlay 上，而 Overlay 不含标题栏（48px），高度要按剩余空间算
         readonly property real available: root.height - 48
         x: Math.round((root.width - width) / 2)
         y: Math.max(8, Math.round((available - height) / 2))
-        height: Math.min(root.configureMode ? 700 : 720, available - 24)
+        height: Math.min(root.configureMode ? 712 : 720, available - 12)
         padding: 0
         background: Rectangle { radius: 14; color: c.row; border.width: 1; border.color: c.line }
 

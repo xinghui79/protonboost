@@ -229,3 +229,17 @@ pub fn netns_enabled(prefix: &Path) -> bool {
         .map(|text| text.lines().any(|line| line.trim() == "netns=1"))
         .unwrap_or(false)
 }
+
+/// 开关独立网络：保留 .winrun.conf 里的其它键，只替换 netns 这一行
+pub fn set_netns(prefix: &Path, enabled: bool) -> Result<(), String> {
+    let conf = prefix.join(".winrun.conf");
+    let text = std::fs::read_to_string(&conf).unwrap_or_default();
+    let mut lines: Vec<String> = text
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("netns="))
+        .map(|line| line.to_string())
+        .collect();
+    lines.push(format!("netns={}", if enabled { 1 } else { 0 }));
+    std::fs::create_dir_all(prefix).map_err(|err| err.to_string())?;
+    std::fs::write(&conf, lines.join("\n") + "\n").map_err(|err| err.to_string())
+}

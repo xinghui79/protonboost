@@ -56,6 +56,7 @@ pub mod ffi {
         #[qproperty(QList_QVariant, config_runners)]
         #[qproperty(QList_QVariant, config_resolutions)]
         #[qproperty(QList_QVariant, config_fps)]
+        #[qproperty(bool, netns)]
         #[qproperty(QString, exes_title)]
         #[qproperty(QList_QVariant, exes_items)]
         #[qproperty(QString, uiEvents)]
@@ -70,6 +71,9 @@ pub mod ffi {
 
         #[qinvokable]
         fn refresh_page(self: Pin<&mut Backend>, page: &QString, prefix: &QString);
+
+        #[qinvokable]
+        fn set_prefix_netns(self: Pin<&mut Backend>, prefix: &QString, enabled: bool);
 
         // 启动与进程
         #[qinvokable]
@@ -102,6 +106,10 @@ pub mod ffi {
 
         #[qinvokable]
         fn log_dir(self: Pin<&mut Backend>, app_id: &QString) -> QString;
+
+        // 详情栏只要尾部几行，不用把整份日志搬进内存
+        #[qinvokable]
+        fn log_tail(self: Pin<&mut Backend>, app_id: &QString, lines: i32) -> QString;
 
         #[qinvokable]
         fn show_dir_exes(self: Pin<&mut Backend>, prefix: &QString, dir_path: &QString);
@@ -180,6 +188,7 @@ pub struct BackendRust {
     linux_apps: QList_QVariant,
     update_available: bool,
     update_details: QString,
+    netns: bool,
     config_entry: QMap_QString_QVariant,
     config_runners: QList_QVariant,
     config_resolutions: QList_QVariant,
@@ -328,6 +337,7 @@ impl ffi::Backend {
                                     ("appId", qvar_str(&row.app_id)),
                                     ("name", qvar_str(&row.display_name)),
                                     ("detail", qvar_str(&row.detail)),
+                                    ("meta", qvar_str(&row.meta)),
                                     ("icon", qvar_str(if row.icon.is_empty() { "winrun" } else { &row.icon })),
                                     ("running", qvar_bool(row.running)),
                                     ("hasLog", qvar_bool(row.has_log)),
@@ -336,6 +346,7 @@ impl ffi::Backend {
                                     ("steamAppid", qvar_str(&row.steam_appid)),
                                     ("kind", qvar_str(&row.kind)),
                                     ("path", qvar_str(&row.path)),
+                                    ("winPath", qvar_str(&row.win_path)),
                                     ("runner", qvar_str(&row.runner)),
                                 ]
                             })
@@ -576,27 +587,60 @@ impl ffi::Backend {
     pub fn refresh_page(mut self: Pin<&mut Self>, page: &QString, prefix: &QString) {
         let page = page.to_string();
         let prefix_path = expand_path(&prefix.to_string());
-        let mut rust = self.as_mut().rust_mut();
-        match page.as_str() {
-            "apps" => {
-                rust.req_apps += 1;
-                rust.current_prefix = prefix_path.to_string_lossy().into_owned();
-                rust.icons_requested.clear();
-                jobs::send(Job::Apps { req: rust.req_apps, prefix: prefix_path });
+        let netns = crate::core::prefix::netns_enabled(&prefix_path);
+        {
+            let mut rust = self.as_mut().rust_mut();
+            match page.as_str() {
+                "apps" => {
+                    rust.req_apps += 1;
+                    rust.current_prefix = prefix_path.to_string_lossy().into_owned();
+                    rust.icons_requested.clear();
+                    jobs::send(Job::Apps { req: rust.req_apps, prefix: prefix_path });
+                }
+                "dirs" => {
+                    rust.req_dirs += 1;
+                    jobs::send(Job::Dirs { req: rust.req_dirs, prefix: prefix_path });
+                }
+                "procs" => {
+                    rust.req_procs += 1;
+                    jobs::send(Job::Procs { req: rust.req_procs, prefix: prefix_path });
+                }
+                "linux" => {
+                    rust.req_linux += 1;
+                    jobs::send(Job::LinuxApps { req: rust.req_linux });
+                }
+                _ => {}
             }
-            "dirs" => {
-                rust.req_dirs += 1;
-                jobs::send(Job::Dirs { req: rust.req_dirs, prefix: prefix_path });
+        }
+        self.as_mut().set_netns(netns);
+    }
+
+    /// 状态栏那个「独立网络」开关：直接改前缀的 .winrun.conf
+    pub fn set_prefix_netns(mut self: Pin<&mut Self>, prefix: &QString, enabled: bool) {
+        let path = expand_path(&prefix.to_string());
+        if path.as_os_str().is_empty() {
+            return;
+        }
+        let zh = crate::core::loc::zh();
+        match crate::core::prefix::set_netns(&path, enabled) {
+            Ok(()) => {
+                self.as_mut().set_netns(enabled);
+                let name = path
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                let message = match (zh, enabled) {
+                    (true, true) => format!("{name}：独立网络已开启（下次启动生效）"),
+                    (true, false) => format!("{name}：独立网络已关闭"),
+                    (false, true) => format!("{name}: isolated network on (applies to the next launch)"),
+                    (false, false) => format!("{name}: isolated network off"),
+                };
+                self.as_mut().set_status(QString::from(message));
             }
-            "procs" => {
-                rust.req_procs += 1;
-                jobs::send(Job::Procs { req: rust.req_procs, prefix: prefix_path });
-            }
-            "linux" => {
-                rust.req_linux += 1;
-                jobs::send(Job::LinuxApps { req: rust.req_linux });
-            }
-            _ => {}
+            Err(err) => self.as_mut().set_status(QString::from(format!(
+                "{}: {err}",
+                if zh { "无法保存网络设置" } else { "Cannot save network setting" }
+            ))),
         }
     }
 
@@ -787,6 +831,25 @@ impl ffi::Backend {
     pub fn log_dir(self: Pin<&mut Self>, app_id: &QString) -> QString {
         let id = app_id.to_string();
         QString::from(crate::core::paths::app_log_dir(&id).to_string_lossy().into_owned())
+    }
+
+    pub fn log_tail(self: Pin<&mut Self>, app_id: &QString, lines: i32) -> QString {
+        let id = app_id.to_string();
+        let limit = lines.clamp(1, 200) as usize;
+        let text = crate::core::paths::latest_log_for_app(&id)
+            .and_then(|path| std::fs::read_to_string(path).ok())
+            .unwrap_or_default();
+        if text.is_empty() {
+            return QString::from("");
+        }
+        let all: Vec<&str> = text.lines().collect();
+        let start = all.len().saturating_sub(limit);
+        let mut tail = all[start..].join("\n");
+        // 单行特别长时再截一下，避免把详情栏撑坏
+        if tail.chars().count() > 2000 {
+            tail = tail.chars().skip(tail.chars().count() - 2000).collect();
+        }
+        QString::from(tail)
     }
 
     pub fn show_dir_exes(self: Pin<&mut Self>, prefix: &QString, dir_path: &QString) {
@@ -1141,7 +1204,7 @@ impl ffi::Backend {
     }
 
     pub fn initial_page(self: Pin<&mut Self>) -> QString {
-        let valid = ["apps", "linux", "procs", "dirs"];
+        let valid = ["apps", "linux", "procs"];
         let page = std::env::var("WINRUN_PAGE").unwrap_or_else(|_| "apps".into());
         let page = page.rsplit('=').next().unwrap_or("apps").to_string();
         if valid.contains(&page.as_str()) {
