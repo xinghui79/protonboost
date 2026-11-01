@@ -541,7 +541,12 @@ impl ffi::Backend {
         let prefix_list = build_list(
             prefixes
                 .iter()
-                .map(|path| vec![("path", qvar_str(&path.to_string_lossy()))])
+                .map(|path| {
+                    vec![
+                        ("path", qvar_str(&path.to_string_lossy())),
+                        ("netns", qvar_bool(crate::core::prefix::netns_enabled(path))),
+                    ]
+                })
                 .collect(),
         );
         self.as_mut().set_prefixes(prefix_list);
@@ -573,7 +578,11 @@ impl ffi::Backend {
                     } else {
                         label.clone()
                     };
-                    vec![("label", qvar_str(&shown)), ("path", qvar_str(&path.to_string_lossy()))]
+                    vec![
+                        ("label", qvar_str(&shown)),
+                        ("path", qvar_str(&path.to_string_lossy())),
+                        ("netns", qvar_bool(crate::core::prefix::netns_enabled(path))),
+                    ]
                 })
                 .collect(),
         );
@@ -649,6 +658,7 @@ impl ffi::Backend {
                     (false, false) => format!("{name}: isolated network off"),
                 };
                 self.as_mut().set_status(QString::from(message));
+                self.as_mut().reload_prefixes();
             }
             Err(err) => self.as_mut().set_status(QString::from(format!(
                 "{}: {err}",

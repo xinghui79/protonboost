@@ -74,9 +74,12 @@ winrun-manager --dump-scan            # 打印前缀扫描结果，排查界面�
 | `~/.cache/winrun/associations` | 每个程序的运行设置 |
 | `~/.cache/winrun/logs` | 运行日志与会话日志 |
 | `~/.cache/winrun/icons` | 从 exe/ico 里抠出来的图标 |
-| `$PREFIX/.winrun.conf` | 前缀自己的开关（`netns=`，状态栏那个「独立网络」按钮改的就是它） |
+| `$PREFIX/.winrun.conf` | 前缀自己的开关（`netns=`，侧栏前缀行右边那个小开关改的就是它） |
 
 ## 独立网络
+
+在侧栏把当前前缀右边那个小开关点亮，就给它开了独立网络（等价于在
+`$PREFIX/.winrun.conf` 里写 `netns=1`），下次启动生效。
 
 前缀开了独立网络后，`pasta` 建一个 network namespace，keeper 进程待在里面把网络撑住，
 程序用 `nsenter` 进去；前缀里最后一个程序退出，keeper 跟着收摊。把 Windows 版加速器

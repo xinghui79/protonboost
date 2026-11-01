@@ -220,8 +220,18 @@ ApplicationWindow {
         if (!item) return ""
         var raw = item.label ? item.label : item.path
         // 进程组的 label 有时是「游戏名 · /path」，只有纯路径才缩成目录名
-        if (raw.charAt(0) === "/") return prefixLabel(raw)
-        return raw
+        if (raw.charAt(0) !== "/") return raw
+        var name = prefixLabel(raw)
+        // 两个不同位置的前缀可能同名（比如都叫 proton），撞名时带上上一级
+        var list = sidebarPrefixes
+        var same = 0
+        for (var i = 0; i < list.length; i++) {
+            var other = list[i].label ? list[i].label : list[i].path
+            if (prefixLabel(other) === name) same++
+        }
+        if (same < 2) return name
+        var parts = raw.replace(/\/+$/, "").split("/")
+        return parts.length > 1 ? parts[parts.length - 2] + "/" + name : name
     }
 
     function shortPath(path) {
@@ -288,6 +298,50 @@ ApplicationWindow {
             color: c.inkText
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
+        }
+    }
+
+    /// 实心按钮 + 下拉箭头（箭头是画出来的，避免 ⌄ 在不同字体里忽高忽低）
+    component WMenuButton: Button {
+        id: menuBtn
+        implicitHeight: 30
+        leftPadding: 14
+        rightPadding: 12
+        background: Rectangle {
+            radius: 7
+            color: !menuBtn.enabled ? c.line
+                 : (menuBtn.pressed || menuBtn.hovered ? Qt.lighter(c.ink, c.dark ? 0.92 : 1.6) : c.ink)
+        }
+        contentItem: RowLayout {
+            spacing: 7
+            Text {
+                Layout.alignment: Qt.AlignVCenter
+                text: menuBtn.text
+                font.pixelSize: 13
+                font.weight: Font.Medium
+                color: c.inkText
+            }
+            Item {
+                Layout.alignment: Qt.AlignVCenter
+                implicitWidth: 9
+                implicitHeight: 6
+                Canvas {
+                    anchors.fill: parent
+                    onPaint: {
+                        var ctx = getContext("2d")
+                        ctx.reset()
+                        ctx.strokeStyle = c.inkText
+                        ctx.lineWidth = 1.5
+                        ctx.lineCap = "round"
+                        ctx.lineJoin = "round"
+                        ctx.beginPath()
+                        ctx.moveTo(0.75, 1)
+                        ctx.lineTo(4.5, 4.6)
+                        ctx.lineTo(8.25, 1)
+                        ctx.stroke()
+                    }
+                }
+            }
         }
     }
 
@@ -706,29 +760,51 @@ ApplicationWindow {
                         }
                         contentItem: RowLayout {
                             spacing: 8
-                            Item {
-                                Layout.leftMargin: 9
-                                implicitWidth: 8
-                                implicitHeight: 8
-                                Rectangle {
-                                    anchors.centerIn: parent
-                                    width: 7
-                                    height: 7
-                                    radius: 3.5
-                                    color: prefBtn.active ? c.accent : "transparent"
-                                    border.width: 1
-                                    border.color: prefBtn.active ? c.accent : c.faint
-                                }
-                            }
                             Text {
+                                Layout.leftMargin: 12
                                 Layout.fillWidth: true
-                                Layout.rightMargin: 8
+                                Layout.rightMargin: 4
                                 text: root.prefixItemLabel(prefBtn.modelData)
                                 color: prefBtn.active ? c.text : c.dim
                                 font.pixelSize: 13
                                 font.weight: prefBtn.active ? Font.DemiBold : Font.Normal
                                 elide: Text.ElideRight
                                 verticalAlignment: Text.AlignVCenter
+                            }
+
+                            // 当前前缀的独立网络开关（改 .winrun.conf，下次启动生效）
+                            Item {
+                                id: netToggle
+                                visible: prefBtn.active
+                                Layout.rightMargin: 5
+                                implicitWidth: 18
+                                implicitHeight: 18
+                                Rectangle {
+                                    anchors.fill: parent
+                                    radius: 5
+                                    color: prefBtn.modelData.netns ? c.accent
+                                         : (netArea.containsMouse ? c.hover : "transparent")
+                                    border.width: 1
+                                    border.color: prefBtn.modelData.netns ? "transparent" : c.line
+                                }
+                                Rectangle {
+                                    anchors.centerIn: parent
+                                    width: 6
+                                    height: 6
+                                    radius: 3
+                                    color: prefBtn.modelData.netns ? c.sidebar : c.faint
+                                }
+                                MouseArea {
+                                    id: netArea
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    onClicked: backend.set_prefix_netns(prefBtn.modelData.path, !prefBtn.modelData.netns)
+                                }
+                                ToolTip.visible: netArea.containsMouse
+                                ToolTip.delay: 500
+                                ToolTip.text: prefBtn.modelData.netns
+                                    ? (root.zh ? "独立网络：开（点击关闭）" : "Isolated network: on")
+                                    : (root.zh ? "独立网络：关（点击开启）" : "Isolated network: off")
                             }
                         }
                         ToolTip.visible: hovered
@@ -773,7 +849,7 @@ ApplicationWindow {
                                    : (navBtn.hovered ? c.hover : "transparent")
                         }
                         contentItem: Text {
-                            leftPadding: 27
+                            leftPadding: 12
                             text: root.pageNames[navBtn.index]
                             color: navBtn.index === root.currentPage ? c.text
                                  : (navBtn.hovered ? c.text : c.dim)
@@ -846,7 +922,6 @@ ApplicationWindow {
                         font.pixelSize: 12
                         elide: Text.ElideMiddle
                     }
-                    NetChip {}
                     Text {
                         text: root.pageSummary()
                         color: c.faint
@@ -855,40 +930,6 @@ ApplicationWindow {
                 }
             }
         }
-    }
-
-    // 状态栏右侧的「独立网络」开关
-    component NetChip: AbstractButton {
-        id: chip
-        implicitHeight: 20
-        padding: 9
-        hoverEnabled: true
-        background: Rectangle {
-            radius: 10
-            color: backend.netns ? c.accentSoft : (chip.hovered ? c.hover : "transparent")
-            border.width: 1
-            border.color: backend.netns ? "transparent" : c.line
-        }
-        contentItem: RowLayout {
-            spacing: 5
-            Rectangle {
-                implicitWidth: 5
-                implicitHeight: 5
-                radius: 2.5
-                color: backend.netns ? c.accent : c.faint
-            }
-            Text {
-                text: (root.zh ? "独立网络" : "Isolated net") + " · "
-                      + (backend.netns ? (root.zh ? "开" : "on") : (root.zh ? "关" : "off"))
-                font.pixelSize: 11
-                color: backend.netns ? c.accent : c.dim
-            }
-        }
-        ToolTip.visible: hovered
-        ToolTip.delay: 500
-        ToolTip.text: root.zh ? "让这个前缀里的程序走独立网络（改 .winrun.conf，下次启动生效）"
-                              : "Put this prefix on its own network namespace"
-        onClicked: backend.set_prefix_netns(root.currentPrefix(), !backend.netns)
     }
 
     // ── 页面骨架 ────────────────────────────────────────────
@@ -937,7 +978,7 @@ ApplicationWindow {
         WSearchField {
             id: pageSearchField
             Layout.preferredWidth: 220
-            implicitHeight: 34
+            implicitHeight: 32
             placeholderText: root.searchHints[toolbar.page]
             text: root.searchValues[toolbar.page]
             onTextEdited: {
@@ -1201,12 +1242,18 @@ ApplicationWindow {
                 Layout.margins: 24
                 spacing: 16
 
-                PageHeader {
+                PageHeader { Layout.fillWidth: true }
+
+                PageToolbar {
                     Layout.fillWidth: true
-                    WAccentButton {
+                    page: 0
+                    onSubmitted: appsList.forceActiveFocus()
+
+                    WMenuButton {
                         id: addBtn
-                        text: (root.zh ? "添加应用" : "Add App") + "  ⌄"
-                        onClicked: addMenu.popup(addBtn, addBtn.width - addMenu.width, addBtn.height + 4)
+                        implicitHeight: 32
+                        text: root.zh ? "添加应用" : "Add App"
+                        onClicked: addMenu.popup(addBtn, 0, addBtn.height + 4)
                         Menu {
                             id: addMenu
                             width: 220
@@ -1225,12 +1272,6 @@ ApplicationWindow {
                             }
                         }
                     }
-                }
-
-                PageToolbar {
-                    Layout.fillWidth: true
-                    page: 0
-                    onSubmitted: appsList.forceActiveFocus()
                     WAccentButton {
                         visible: backend.update_available
                         text: root.zh ? "更新运行器" : "Update Runners"
