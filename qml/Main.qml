@@ -505,7 +505,7 @@ ApplicationWindow {
 
     // ── 标题栏：左边红绿灯，中间页面名 ──────────────────────
     header: Rectangle {
-        height: 44
+        height: 48
         color: root.configureMode ? c.window : c.sidebar
 
         MouseArea {
@@ -559,6 +559,42 @@ ApplicationWindow {
             font.weight: Font.DemiBold
             color: c.text
             opacity: 0.8
+        }
+
+        // 右上角：搜索 + 当前页面的主操作（macOS 工具栏的位置）
+        RowLayout {
+            visible: !root.configureMode
+            anchors.right: parent.right
+            anchors.rightMargin: 12
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: 8
+
+            WSearchField {
+                id: pageSearchField
+                Layout.preferredWidth: 200
+                implicitHeight: 28
+                placeholderText: root.searchHints[root.currentPage]
+                text: root.searchValues[root.currentPage]
+                onTextEdited: {
+                    var copy = root.searchValues.slice()
+                    copy[root.currentPage] = text
+                    root.searchValues = copy
+                }
+            }
+
+            WAccentButton {
+                visible: root.currentPage === 0
+                implicitHeight: 28
+                text: root.zh ? "添加应用" : "Add App"
+                onClicked: backend.new_config(root.appsPrefix)
+            }
+            WButton {
+                visible: root.currentPage === 2
+                outlined: true
+                implicitHeight: 28
+                text: root.zh ? "刷新" : "Refresh"
+                onClicked: root.refreshCurrent()
+            }
         }
 
         Rectangle {
@@ -698,7 +734,6 @@ ApplicationWindow {
     // ── 页面骨架 ────────────────────────────────────────────
     component PageHeader: Item {
         implicitHeight: headLayout.implicitHeight
-        default property alias actions: actionsRow.data
         ColumnLayout {
             id: headLayout
             anchors.left: parent.left
@@ -716,7 +751,6 @@ ApplicationWindow {
                     font.letterSpacing: -0.4
                 }
                 Item { Layout.fillWidth: true }
-                RowLayout { id: actionsRow; spacing: 8 }
             }
             Text {
                 text: root.pageSubtitles[root.currentPage]
@@ -730,20 +764,11 @@ ApplicationWindow {
     }
 
     component PageToolbar: RowLayout {
+        default property alias trailing: trailingRow.data
         spacing: 8
         PrefixPicker {}
-        WSearchField {
-            id: pageSearchField
-            Layout.preferredWidth: 220
-            placeholderText: root.searchHints[root.currentPage]
-            text: root.searchValues[root.currentPage]
-            onTextEdited: {
-                var copy = root.searchValues.slice()
-                copy[root.currentPage] = text
-                root.searchValues = copy
-            }
-        }
         Item { Layout.fillWidth: true }
+        RowLayout { id: trailingRow; spacing: 8 }
     }
 
     // 分组列表：一个圆角容器装所有行
@@ -855,12 +880,10 @@ ApplicationWindow {
             anchors.margins: 24
             spacing: 16
 
-            PageHeader {
+            PageHeader { Layout.fillWidth: true }
+
+            PageToolbar {
                 Layout.fillWidth: true
-                WAccentButton {
-                    text: root.zh ? "添加应用" : "Add App"
-                    onClicked: backend.new_config(root.appsPrefix)
-                }
                 WAccentButton {
                     visible: backend.update_available
                     text: root.zh ? "更新运行器" : "Update Runners"
@@ -873,8 +896,6 @@ ApplicationWindow {
                         function () { backend.update_runners_now() })
                 }
             }
-
-            PageToolbar { Layout.fillWidth: true }
 
             Item {
                 Layout.fillWidth: true
@@ -1084,21 +1105,23 @@ ApplicationWindow {
             anchors.margins: 24
             spacing: 16
 
-            PageHeader {
+            PageHeader { Layout.fillWidth: true }
+
+            PageToolbar {
                 Layout.fillWidth: true
                 WField {
                     id: customCmd
-                    Layout.preferredWidth: 260
+                    Layout.preferredWidth: 240
+                    implicitHeight: 32
                     placeholderText: root.zh ? "自定义命令，如 steam" : "Custom command, e.g. steam"
                     onAccepted: launchCustom()
                 }
                 WAccentButton {
+                    implicitHeight: 32
                     text: root.zh ? "运行命令" : "Run"
                     onClicked: launchCustom()
                 }
             }
-
-            PageToolbar { Layout.fillWidth: true }
 
             Item {
                 Layout.fillWidth: true
@@ -1183,19 +1206,15 @@ ApplicationWindow {
             anchors.margins: 24
             spacing: 16
 
-            PageHeader {
+            PageHeader { Layout.fillWidth: true }
+
+            PageToolbar {
                 Layout.fillWidth: true
-                WButton {
-                    text: root.zh ? "刷新" : "Refresh"
-                    onClicked: root.refreshCurrent()
-                }
                 WDangerButton {
                     text: root.zh ? "结束全部进程" : "Close All"
                     onClicked: backend.kill_all_processes(root.procsPrefix)
                 }
             }
-
-            PageToolbar { Layout.fillWidth: true }
 
             Item {
                 Layout.fillWidth: true
