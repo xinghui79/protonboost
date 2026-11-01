@@ -8,7 +8,12 @@
 
 pub mod launch;
 pub mod logs;
+pub mod overlay;
 pub mod runners;
 pub mod runtime;
 pub mod session;
+pub mod steam_forward;
 pub mod update;
+
+#[cfg(test)]
+mod tests;

@@ -28,9 +28,69 @@ fn print_usage() {
   winrun-manager --exec <命令...>   在前缀会话里跑一条命令（Steam 启动选项）
   winrun-manager --list-runner      列出找到的 Proton / Wine
   winrun-manager --dump-scan [前缀] 打印前缀扫描结果，排查界面为什么是空的
+  winrun-manager --doctor            环境诊断（缺什么、什么在哪儿）
   winrun-manager --version          版本",
         env!("CARGO_PKG_VERSION")
     );
+}
+
+
+/// 环境诊断：把缺什么、什么在哪儿一次列清楚
+///
+/// 出问题时（程序起不来、加速器不生效、覆盖层没有）先跑这个，
+/// 比逐个猜要快得多。
+fn doctor() {
+    println!("WinRun 诊断");
+    println!();
+
+    println!("命令:");
+    for (label, name) in [
+        ("curl", "curl"),
+        ("tar", "tar"),
+        ("sha512sum", "sha512sum"),
+        ("pasta（独立网络）", "pasta"),
+        ("nsenter（进命名空间）", "nsenter"),
+        ("unshare（降权）", "unshare"),
+        ("cc（覆盖层辅助库）", "cc"),
+        ("notify-send（通知）", "notify-send"),
+    ] {
+        match core::paths::which(name) {
+            Some(path) => println!("  [有] {label:<22} {}", path.display()),
+            None => println!("  [缺] {label:<22} {name}"),
+        }
+    }
+
+    println!();
+    println!("路径:");
+    let prefix = core::paths::default_prefix();
+    println!("  前置环境               {}", prefix.display());
+    println!("    pfx（C 盘）           {}", prefix.join("pfx").display());
+    println!("    存在                  {}", if prefix.join("pfx").is_dir() { "是" } else { "否（首次启动会自动初始化）" });
+    println!("  缓存                   {}", core::paths::cache_home().join("winrun").display());
+    println!("  独立网络开关           {}", prefix.join(".winrun.conf").display());
+
+    println!();
+    println!("运行器:");
+    let runners = engine::runners::discover();
+    if runners.is_empty() {
+        println!("  [缺] 一个都没找到。程序启动需要 Proton 或 Wine。");
+        println!("       在管理器里点「下载 GE-Proton」，或自己装系统 wine。");
+    } else {
+        for runner in &runners {
+            println!("  [有] {:<20} {} ({})", runner.name, runner.path, runner.kind);
+        }
+    }
+
+    println!();
+    println!("独立网络:");
+    let netns = core::prefix::netns_enabled(&prefix);
+    println!("  当前前缀               {}", if netns { "已开启" } else { "未开启" });
+    println!("  真实 uid（命名空间外） {}", engine::session::outside_uid());
+    println!("  覆盖层辅助库           {}", if engine::overlay::is_ready() { "已编译" } else { "未编译（首次用到时现编）" });
+
+    println!();
+    println!("Steam 端口转发:");
+    println!("  端口                   57343（命名空间里的游戏用它连宿主 Steam）");
 }
 
 fn main() {
@@ -113,6 +173,12 @@ fn main() {
         for runner in engine::runners::discover() {
             println!("{}\t{}\t{}", runner.name, runner.kind, runner.path);
         }
+        return;
+    }
+
+    // 环境诊断：出问题时先跑这个
+    if args.iter().any(|arg| arg == "--doctor") {
+        doctor();
         return;
     }
 

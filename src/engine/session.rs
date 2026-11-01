@@ -41,6 +41,66 @@ pub fn host_netns() -> Option<String> {
         .map(|path| path.to_string_lossy().into_owned())
 }
 
+/// 当前进程在**所有 user namespace 之外**的真实 uid。
+///
+/// pasta 把用户映射成命名空间里的 root，容器（flatpak、podman）也一样。
+/// Steam 这类程序会检查 `id -u`，看到 0 就拒绝运行，所以要把真实 uid 找回来。
+/// 读 /proc/self/uid_map：每行是「命名空间内 起 命名空间外 起 长度」。
+pub fn outside_uid() -> u32 {
+    use std::os::unix::fs::MetadataExt;
+    let inner = std::fs::metadata("/proc/self").map(|meta| meta.uid()).unwrap_or(0);
+    let Ok(text) = std::fs::read_to_string("/proc/self/uid_map") else {
+        return inner;
+    };
+    for line in text.lines() {
+        let mut fields = line.split_whitespace();
+        let (Some(inside_start), Some(outside_start), Some(count)) =
+            (fields.next(), fields.next(), fields.next())
+        else {
+            continue;
+        };
+        let (Ok(inside), Ok(outside), Ok(count)) = (
+            inside_start.parse::<u32>(),
+            outside_start.parse::<u32>(),
+            count.parse::<u32>(),
+        ) else {
+            continue;
+        };
+        if count > 0 && inner >= inside && inner < inside + count {
+            return outside + (inner - inside);
+        }
+    }
+    inner
+}
+
+/// 真实 gid，用法同 outside_uid
+pub fn outside_gid() -> u32 {
+    use std::os::unix::fs::MetadataExt;
+    let inner = std::fs::metadata("/proc/self").map(|meta| meta.gid()).unwrap_or(0);
+    let Ok(text) = std::fs::read_to_string("/proc/self/gid_map") else {
+        return inner;
+    };
+    for line in text.lines() {
+        let mut fields = line.split_whitespace();
+        let (Some(inside_start), Some(outside_start), Some(count)) =
+            (fields.next(), fields.next(), fields.next())
+        else {
+            continue;
+        };
+        let (Ok(inside), Ok(outside), Ok(count)) = (
+            inside_start.parse::<u32>(),
+            outside_start.parse::<u32>(),
+            count.parse::<u32>(),
+        ) else {
+            continue;
+        };
+        if count > 0 && inner >= inside && inner < inside + count {
+            return outside + (inner - inside);
+        }
+    }
+    inner
+}
+
 fn read_trimmed(path: &Path) -> Option<String> {
     std::fs::read_to_string(path)
         .ok()
@@ -106,6 +166,14 @@ pub struct Session {
     pub netns: Option<String>,
     /// nsenter 前缀（进命名空间），没有独立网络时为空
     pub join: Vec<String>,
+    /// 和 join 一样，但额外套一层 user namespace，把 uid 从 root 映回真实用户。
+    ///
+    /// pasta 会把用户映射成命名空间里的 root，Steam 这类程序检查到 uid 0
+    /// 就拒绝运行（「Cannot run as root user」）。再套一层
+    /// `unshare -U --map-user=<真实 uid>`，程序在命名空间里就是普通用户了。
+    /// 只有 Linux 程序需要；Windows 程序（Proton/Wine）必须保持 root 才能装
+    /// 加速器的 TUN 驱动。
+    pub join_as_user: Vec<String>,
     pub env: Vec<(String, String)>,
     /// Proton 的 verb：新会话用 waitforexitandrun，加入已有会话用 run
     pub verb: String,
@@ -195,6 +263,26 @@ pub fn prepare(prefix: &Path, zh: bool) -> Result<Session, SessionError> {
             "--preserve-credentials".into(),
             "--".into(),
         ];
+        // Linux 程序要再套一层 user namespace 把自己从 root 变回普通用户，
+        // 否则 Steam 之类的程序会拒绝运行。需要 unshare（util-linux）。
+        if which("unshare") {
+            let uid = outside_uid();
+            let gid = outside_gid();
+            session.join_as_user = vec![
+                "nsenter".into(),
+                "-t".into(),
+                keeper.to_string(),
+                "-U".into(),
+                "-n".into(),
+                "--preserve-credentials".into(),
+                "--".into(),
+                "unshare".into(),
+                "-U".into(),
+                format!("--map-user={uid}"),
+                format!("--map-group={gid}"),
+                "--".into(),
+            ];
+        }
         // 加速器的 wintun.dll 会往 Windows 里装驱动；WE-Proton 自带的那个在命名空间里建 TUN
         session.env.push(("WINEDLLOVERRIDES".into(), "wintun=b".into()));
         // pasta 把用户映射成 root，会话总线不认，keeper 过的桥才认得
@@ -474,6 +562,10 @@ pub fn keeper_main(dir: &Path) -> ! {
     }
     println!("session up: {} ({})", netns, prefix.display());
 
+    // 命名空间里的游戏要能连上宿主的 Steam 客户端（127.0.0.1:57343）
+    let mut steam_forward = crate::engine::steam_forward::SteamForward::new();
+    steam_forward.update();
+
     let mut seen = false;
     let mut empty_since: Option<Instant> = None;
     loop {
@@ -482,6 +574,7 @@ pub fn keeper_main(dir: &Path) -> ! {
             std::process::exit(0);
         }
         std::thread::sleep(Duration::from_secs(1));
+        steam_forward.update();
         if processes_in_namespace(&netns) > 0 {
             seen = true;
             empty_since = None;

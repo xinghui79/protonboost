@@ -1336,6 +1336,33 @@ ApplicationWindow {
                     }
                 }
 
+                // 独立网络开着、又没有覆盖层辅助库时提醒一句：
+                // Steam 覆盖层在命名空间里找不到宿主客户端（会悄悄失效）
+                Rectangle {
+                    visible: backend.netns && !backend.overlay_ready
+                    Layout.fillWidth: true
+                    implicitHeight: 40
+                    radius: 10
+                    color: c.group
+                    border.width: 1
+                    border.color: c.line
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 14
+                        anchors.rightMargin: 10
+                        spacing: 10
+                        Text {
+                            Layout.fillWidth: true
+                            text: root.zh
+                                  ? "独立网络里 Steam 覆盖层可能失效：需要系统 C 编译器（gcc）来生成一个辅助库。"
+                                  : "The Steam overlay may not work inside the isolated network: it needs a C compiler (gcc) to build a small helper library."
+                            color: c.dim
+                            font.pixelSize: 12
+                            wrapMode: Text.WordWrap
+                        }
+                    }
+                }
+
                 Item {
                     Layout.fillWidth: true
                     Layout.fillHeight: true

@@ -8,6 +8,10 @@ dist/
 # 本地工作记录与验收截图
 /.workbuddy/
 
+# 删除文件时留下的回收站残留（桌面环境的 trash 实现）
+.Trash-0/
+.Trash-*/
+
 # makepkg 的产物（只留 PKGBUILD）
 /packaging/src/
 /packaging/pkg/

@@ -194,6 +194,19 @@ fn build_command(request: &Request, runner: &Runner, session: &session::Session)
         }
     }
 
+    // Steam 覆盖层在独立网络里找不到宿主上的 Steam 客户端：它按 getuid() 拼
+    // 共享内存的名字，而命名空间里 Wine 是 root、宿主客户端是普通用户。
+    // 这里预加载一个小库，只让覆盖层看到真实 uid。
+    for (key, value) in crate::engine::overlay::prepare_env(
+        session.netns.is_some(),
+        std::env::var("LD_PRELOAD").ok().as_deref(),
+        session::outside_uid(),
+    ) {
+        if !has_env(&env, &key) {
+            env.push((key, value));
+        }
+    }
+
     if request.gamescope {
         argv.push("gamescope".into());
         argv.extend(gamescope_args(request));
@@ -348,59 +361,30 @@ pub fn launch(request: &Request, zh: bool) -> Result<Report, String> {
 
 /// 在前缀的会话里跑一条 Linux 命令（Linux 程序页用）：
 /// 前缀开了独立网络时进同一个命名空间，否则就在宿主网络里跑。
-/// Steam 的 Linux 启动脚本硬性拒绝 root。提前说清楚，别让用户对着
-/// `bin_steam.sh: Error: Cannot run as root user` 猜半天。
-fn root_steam_hint(argv: &[String]) -> Option<String> {
-    if current_uid() != 0 {
-        return None;
-    }
-    let first = argv.first()?;
-    let name = std::path::Path::new(first)
-        .file_name()?
-        .to_string_lossy()
-        .to_lowercase();
-    if !(name.contains("steam") && name.ends_with(".sh")) {
-        return None;
-    }
-    Some(if crate::core::loc::zh() {
-        "Steam 客户端拒绝以 root 运行（Cannot run as root user）。\n\n\
-两个要求是冲突的：独立网络需要 root 才能建命名空间，而 Steam 不接受 root。\n\
-建议关掉这个前缀的独立网络（侧栏里前缀右边那个小开关），让加速器用路由模式接管\
-系统流量，Steam 以普通用户正常运行；这样社区加速一样有效。"
-            .into()
-    } else {
-        "Steam refuses to run as root. Isolated networks need root, Steam does not \
-accept it. Try turning the prefix's isolated network off and let the accelerator \
-use its routing mode instead."
-            .into()
-    })
-}
-
-/// 当前进程的 uid（读 /proc/self，容器里也能用）
-fn current_uid() -> u32 {
-    use std::os::unix::fs::MetadataExt;
-    std::fs::metadata("/proc/self").map(|meta| meta.uid()).unwrap_or(0)
-}
-
 pub fn run_command(prefix: &Path, argv: &[String]) -> Result<(), String> {
     if argv.is_empty() {
         return Err("没有要运行的程序".into());
-    }
-    if let Some(hint) = root_steam_hint(argv) {
-        return Err(hint);
     }
     let zh = crate::core::loc::zh();
     let session = session::prepare(prefix, zh).map_err(|err| err.message(zh))?;
     let app_id = logs::app_id(prefix, Path::new(&argv[0]));
     let log = logs::start_run(&app_id).map_err(|err| err.to_string())?;
 
-    let mut command = if session.join.is_empty() {
+    // Linux 程序用「以普通用户身份进入会话」的前缀：
+    // pasta 把用户映射成 root，Steam 这类程序会拒绝以 root 运行。
+    let join = if session.join_as_user.is_empty() {
+        &session.join
+    } else {
+        &session.join_as_user
+    };
+
+    let mut command = if join.is_empty() {
         let mut command = Command::new(&argv[0]);
         command.args(&argv[1..]);
         command
     } else {
-        let mut command = Command::new(&session.join[0]);
-        command.args(&session.join[1..]).args(argv);
+        let mut command = Command::new(&join[0]);
+        command.args(&join[1..]).args(argv);
         command
     };
     command
@@ -413,6 +397,51 @@ pub fn run_command(prefix: &Path, argv: &[String]) -> Result<(), String> {
     command.spawn().map(|_| ()).map_err(|err| err.to_string())
 }
 
+/// 从 Steam 传来的 `%command%` 里找出真正的游戏程序。
+///
+/// Steam 展开 `%command%` 后是一长串：Steam 自己的运行器前缀 + `proton` +
+/// 动词 + 游戏 exe + 参数。把 `proton <动词>` 之后的那段截出来，游戏就能
+/// 在 WinRun 的前缀和独立网络里跑，而不是 Steam 给它建的那一套。
+///
+/// 找不到就返回 None（那说明 %command% 指向的是 Linux 原生程序，
+/// 交给 run_command 那条路处理）。
+pub fn take_steam_command(argv: &[String]) -> Option<(String, Vec<String>)> {
+    // 找 proton 后面跟着已知动词的那一处。
+    // 用 enumerate 而不是 windows(3)：同一个 proton 路径可能出现多次，
+    // 必须按实际位置取，不能用 position 找「第一个同名项」。
+    for (index, window) in argv.windows(3).enumerate() {
+        let exe = &window[0];
+        let verb = &window[1];
+        if !is_proton_path(exe) {
+            continue;
+        }
+        if !matches!(verb.as_str(), "waitforexitandrun" | "run" | "runinprefix") {
+            continue;
+        }
+        let target = window[2].clone();
+        // 剩下的参数从动词之后开始
+        let rest: Vec<String> = argv.iter().skip(index + 3).cloned().collect();
+        return Some((target, rest));
+    }
+    None
+}
+
+/// 是不是 Proton 的启动脚本
+fn is_proton_path(value: &str) -> bool {
+    let lower = value.to_lowercase();
+    lower.ends_with("/proton") || lower.ends_with("\\proton") || lower == "proton"
+}
+
+/// Steam 启动的游戏要不要按它自己的 app id 走（决定 UMU_ID 怎么设）
+pub fn steam_app_id_from_env() -> Option<String> {
+    let value = std::env::var("SteamAppId").ok()?;
+    let value = value.trim().to_string();
+    if value.is_empty() || value == "0" {
+        return None;
+    }
+    Some(value)
+}
+
 /// 前台跑一条命令并等它结束（`--exec` 用，给 Steam 启动选项）：
 /// 前缀开了独立网络时进同一个命名空间，返回它的退出码。
 pub fn exec_foreground(prefix: &Path, argv: &[String]) -> i32 {
@@ -421,6 +450,39 @@ pub fn exec_foreground(prefix: &Path, argv: &[String]) -> i32 {
         return 2;
     }
     let zh = crate::core::loc::zh();
+
+    // Steam 的 %command%：把游戏从 Steam 的运行器里取出来，改用 WinRun 的前缀跑。
+    // 这样它和加速器在同一个前缀、同一个独立网络里。
+    if let Some((target, args)) = take_steam_command(argv) {
+        let runner = runners::for_prefix(prefix);
+        let Some(runner) = runner else {
+            eprintln!(
+                "winrun: {}",
+                if zh {
+                    "没有找到可用的运行器（Proton / Wine）"
+                } else {
+                    "No Proton / Wine runner found"
+                }
+            );
+            return 1;
+        };
+        let request = Request {
+            prefix: prefix.to_path_buf(),
+            target: PathBuf::from(&target),
+            args,
+            runner: Some(runner),
+            steam_appid: steam_app_id_from_env().unwrap_or_default(),
+            ..Default::default()
+        };
+        return match launch(&request, zh) {
+            Ok(_) => 0,
+            Err(err) => {
+                eprintln!("winrun: {err}");
+                1
+            }
+        };
+    }
+
     let session = match session::prepare(prefix, zh) {
         Ok(session) => session,
         Err(err) => {
@@ -428,13 +490,19 @@ pub fn exec_foreground(prefix: &Path, argv: &[String]) -> i32 {
             return 1;
         }
     };
-    let mut command = if session.join.is_empty() {
+    // 和 run_command 一样：Linux 程序以普通用户身份进会话，Steam 才肯跑
+    let join = if session.join_as_user.is_empty() {
+        &session.join
+    } else {
+        &session.join_as_user
+    };
+    let mut command = if join.is_empty() {
         let mut command = Command::new(&argv[0]);
         command.args(&argv[1..]);
         command
     } else {
-        let mut command = Command::new(&session.join[0]);
-        command.args(&session.join[1..]).args(argv);
+        let mut command = Command::new(&join[0]);
+        command.args(&join[1..]).args(argv);
         command
     };
     command.env("WINRUN_PREFIX", prefix);

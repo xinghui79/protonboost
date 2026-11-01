@@ -24,7 +24,8 @@
 ## 依赖
 
 - Rust（构建用）、Qt 6：`qt6-base` `qt6-declarative` `qt6-svg`
-- 运行时：`passt`（独立网络）、`util-linux`（nsenter）、`curl` + `tar`（下载运行器/运行时）
+- 运行时：`passt`（独立网络）、`util-linux`（nsenter / unshare）、`curl` + `tar`（下载运行器/运行时）
+- 可选：`gcc`（Steam 覆盖层辅助库）、`wine`（系统 Wine 运行器）、`icoextract`（图标提取）
 - 运行器：任意一份 Proton 或 Wine，详见下面「运行器」一节
 
 ## 安装
@@ -60,6 +61,7 @@ winrun-manager --run 程序.exe         # 按保存的配置直接启动
 winrun-manager --exec <命令>          # 在前缀会话里跑一条命令（Steam 启动选项）
 winrun-manager --list-runner          # 列出发现的 Proton / Wine
 winrun-manager --dump-scan            # 打印前缀扫描结果，排查界面为什么空
+winrun-manager --doctor               # 环境诊断：缺什么命令、运行器在哪、前缀状态
 ```
 
 - **右键 exe**：装好之后（`./install.sh`），文件管理器里右键任意 exe 有「运行Windows软件」
@@ -127,6 +129,32 @@ Runtime（`SteamLinuxRuntime_sniper` / `soldier`），本机没有的话会自�
 （网易 UU 的「路由模式」、雷神的「模式三」）和游戏装进同一个前缀，加速器接管的就是
 游戏所在的网络。
 
+### Linux 程序也能进这个网络
+
+`pasta` 会把用户映射成命名空间里的 root，Steam 这类程序检查到 `uid 0` 就拒绝运行
+（`Cannot run as root user`）。所以 Linux 程序进会话时会**再套一层 user namespace**
+（`unshare -U --map-user=<你的真实 uid>`），在里面它就是普通用户，Steam 照常能跑。
+
+### Steam 游戏
+
+在 Steam 里把游戏的启动选项设成：
+
+```
+winrun-manager --exec %command%
+```
+
+`%command%` 里 Steam 自己的运行器前缀会被剥掉，游戏改为在 WinRun 的前缀里跑——
+于是它和加速器共享同一个独立网络。Windows 版 Steam（装在同一个前缀里的那份）
+也一样适用。
+
+游戏通过 `127.0.0.1:57343` 找 Steam 客户端；独立网络里这个地址是命名空间自己的
+回环，keeper 会把连接转给宿主上的 Steam 客户端。
+
+Steam 覆盖层（FPS、成就）要靠 `getuid()` 找宿主客户端。命名空间里 Wine 是 root、
+宿主客户端是普通用户，两边对不上，覆盖层会悄悄失效。WinRun 会在需要时用系统 C
+编译器（`gcc`）生成一个很小的辅助库预加载进游戏，只让覆盖层看到真实 uid。
+没装编译器也不影响游戏运行，只是没有覆盖层。
+
 ## 构建
 
 ```bash
@@ -151,6 +179,8 @@ src/engine/              启动引擎
   runners.rs             发现 Proton / Wine
   runtime.rs             Proton 需要的 Steam Linux Runtime
   session.rs             前缀会话与独立网络（pasta + keeper）
+  overlay.rs             Steam 覆盖层的 uid 辅助库（现场编译的小 .so）
+  steam_forward.rs       命名空间里的游戏连宿主 Steam 客户端（57343）
   launch.rs              拼环境变量与命令行、启动、写日志
   logs.rs                运行日志位置
   update.rs              GE / DW 运行器版本检查与安装

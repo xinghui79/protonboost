@@ -60,6 +60,7 @@ pub mod ffi {
         #[qproperty(bool, netns)]
         #[qproperty(bool, tray_available)]
         #[qproperty(i32, runner_count)]
+        #[qproperty(bool, overlay_ready)]
         #[qproperty(QString, exes_title)]
         #[qproperty(QList_QVariant, exes_items)]
         #[qproperty(QString, uiEvents)]
@@ -198,6 +199,7 @@ pub struct BackendRust {
     tray_available: bool,
     tray_checked: bool,
     runner_count: i32,
+    overlay_ready: bool,
     config_entry: QMap_QString_QVariant,
     config_icon: QString,
     config_runners: QList_QVariant,
@@ -598,6 +600,7 @@ impl ffi::Backend {
         );
         self.as_mut().set_processPrefixes(process_list);
         self.as_mut().set_runner_count(engine_runners::discover().len() as i32);
+        self.as_mut().set_overlay_ready(crate::engine::overlay::is_ready());
 
         // 首次加载时给状态栏一句交代
         if self.as_mut().rust().status.to_string().is_empty() {
