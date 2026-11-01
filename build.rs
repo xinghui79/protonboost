@@ -30,11 +30,12 @@ fn main() {
     let qml = QmlModule::new("WinRun").qml_file("qml/Main.qml");
 
     CxxQtBuilder::new_qml_module(qml)
-        .file("src/bridge.rs")
-        .file("src/shim_bridge.rs")
-        .cpp_file("src/shim.cpp")
+        .file("src/qt/bridge.rs")
+        .file("src/qt/shim_bridge.rs")
+        .cpp_file("src/qt/shim.cpp")
         .qt_module("Gui")
         .qt_module("Quick")
+        .qt_module("Qml")
         .qt_module("Widgets")
         .build();
 }

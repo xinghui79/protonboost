@@ -208,3 +208,19 @@ pub fn collect_cache_entries() -> Vec<ConfigEntry> {
     entries.sort_by(|a, b| b.0.cmp(&a.0));
     entries.into_iter().map(|(_, entry)| entry).collect()
 }
+
+/// 按 exe 找它保存过的配置：返回 (前缀, 配置)，导出的桌面入口启动时用
+pub fn find_for_target(target: &std::path::Path) -> Option<(PathBuf, ConfigEntry)> {
+    let key = target.to_string_lossy();
+    let mut entry = ConfigEntry::read(&key)?;
+    let prefix = if entry.prefix.is_empty() {
+        crate::core::prefix::collect_prefixes().into_iter().next()?
+    } else {
+        expand_path(&entry.prefix)
+    };
+    if entry.prefix.is_empty() {
+        entry.prefix = prefix.to_string_lossy().into_owned();
+    }
+    entry.exe = key.into_owned();
+    Some((prefix, entry))
+}

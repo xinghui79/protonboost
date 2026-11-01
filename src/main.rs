@@ -4,11 +4,14 @@
 // 与 Rust 的 snake_case 约定冲突，这里统一放行。
 #![allow(non_snake_case, non_camel_case_types)]
 
-mod bridge;
+mod app;
 mod core;
-mod ipc;
-mod jobs;
-mod shim_bridge;
+mod engine;
+mod qt;
+
+// 让 crate::bridge / crate::jobs 这些老路径继续可用（模块实际在子目录里）
+pub use app::{ipc, jobs};
+pub use qt::{bridge, shim_bridge};
 
 use cxx_qt_lib::{QString, QQmlApplicationEngine, QUrl};
 use std::path::PathBuf;
@@ -18,9 +21,25 @@ const QML_STAMP: &str = env!("WINRUN_QML_STAMP");
 
 fn main() {
     let _qml_stamp = QML_STAMP;
+    // 管道被提前关闭时（如 `--list-runner | head`）安静退出，不要 panic
+    unsafe { nix::sys::signal::signal(nix::sys::signal::Signal::SIGPIPE, nix::sys::signal::SigHandler::SigDfl).ok() };
+
+    let args: Vec<String> = std::env::args().collect();
+
+    // 由前一次启动的 pasta 拉起的会话守护进程：撑住独立网络，等程序退出
+    if let Some(pos) = args.iter().position(|arg| arg == engine::session::KEEPER_FLAG) {
+        let dir = args.get(pos + 1).cloned().unwrap_or_default();
+        engine::session::keeper_main(std::path::Path::new(&dir));
+    }
+
+    // 运行模式（导出的桌面入口用）：--run <exe>
+    if let Some(pos) = args.iter().position(|arg| arg == "--run") {
+        let exe = args.get(pos + 1).cloned().unwrap_or_default();
+        run_saved(&exe);
+        return;
+    }
 
     // 启动模式：--configure <exe> 只显示配置对话框
-    let args: Vec<String> = std::env::args().collect();
     let configure_mode = match args.iter().position(|arg| arg == "--configure") {
         Some(pos) => {
             let exe = args.get(pos + 1).cloned().unwrap_or_default();
@@ -29,6 +48,16 @@ fn main() {
         }
         None => false,
     };
+
+    // 命令透传（Steam 启动选项用）：--exec <命令...>
+    // 在前缀的会话里跑一条 Linux 命令，等它结束并沿用它的退出码。
+    if let Some(pos) = args.iter().position(|arg| arg == "--exec") {
+        let command: Vec<String> = args[pos + 1..].to_vec();
+        let prefix = std::env::var("WINRUN_PREFIX")
+            .map(|value| core::paths::expand_path(&value))
+            .unwrap_or_else(|_| core::paths::home().join(".proton"));
+        std::process::exit(engine::launch::exec_foreground(&prefix, &command));
+    }
 
     // 调试：直接输出扫描结果
     if let Some(pos) = args.iter().position(|arg| arg == "--dump-scan") {
@@ -46,6 +75,14 @@ fn main() {
         }
         let dirs = core::scan::scan_install_dirs(&path, &[]);
         println!("dirs: {}", dirs.len());
+        return;
+    }
+
+    // 调试：列出发现的运行器
+    if args.iter().any(|arg| arg == "--list-runner") {
+        for runner in engine::runners::discover() {
+            println!("{}\t{}\t{}", runner.name, runner.kind, runner.path);
+        }
         return;
     }
 
@@ -87,9 +124,9 @@ fn main() {
         shim_bridge::tray_set_menu_title(&QString::from(open_text), &QString::from(quit_text));
     }
 
-    let mut engine = QQmlApplicationEngine::new();
-    if let Some(engine) = engine.as_mut() {
-        engine.load(&QUrl::from("qrc:/qt/qml/WinRun/qml/Main.qml"));
+    let mut qml_engine = QQmlApplicationEngine::new();
+    if let Some(qml_engine) = qml_engine.as_mut() {
+        qml_engine.load(&QUrl::from("qrc:/qt/qml/WinRun/qml/Main.qml"));
     }
 
     // 开发用：WINRUN_SHOT=<png 路径> 时渲染完截图再退出（配合 offscreen 平台做无头验收）
@@ -105,6 +142,38 @@ fn main() {
         let code = shim_bridge::app_exec(&app);
         ipc::cleanup();
         std::process::exit(code);
+    }
+}
+
+/// 按保存的配置直接启动一个程序（不给界面，导出的 .desktop 用）
+fn run_saved(exe: &str) {
+    let target = core::paths::expand_path(exe);
+    let Some((prefix, entry)) = core::conf::find_for_target(&target) else {
+        eprintln!("winrun: 没有找到 {} 的配置", target.display());
+        std::process::exit(1);
+    };
+    let request = engine::launch::Request {
+        prefix,
+        target,
+        args: engine::launch::split_args(&entry.program_args),
+        runner: if entry.runner.is_empty() { None } else { engine::runners::resolve(&entry.runner) },
+        gamescope: entry.gamescope,
+        gamescope_fullscreen: entry.gamescope_fullscreen,
+        gamescope_res: entry.gamescope_res.clone(),
+        gamescope_fps: entry.gamescope_fps.clone(),
+        gamescope_fsr: entry.gamescope_fsr,
+        gamescope_extra: entry.gamescope_args.clone(),
+        mangohud: entry.mangohud,
+        wayland: entry.wayland,
+        env: engine::launch::parse_env_vars(&entry.env_vars),
+        steam_appid: entry.steam_appid.clone(),
+    };
+    match engine::launch::launch(&request, core::loc::zh()) {
+        Ok(_) => {}
+        Err(err) => {
+            eprintln!("winrun: {err}");
+            std::process::exit(1);
+        }
     }
 }
 

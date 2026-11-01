@@ -29,7 +29,6 @@ pub const LOW_VALUE_EXE_WORDS: &[&str] = &[
     "unins", "uninstall", "unitycrashhandler", "update", "updater", "vc_redist", "vcredist",
 ];
 pub const UNINSTALLER_WORDS: &[&str] = &["unins", "卸载"];
-pub const DEFAULT_RUNNER_DIR: &str = "WE-Proton Latest";
 
 // ── 扫描出的应用条目 ─────────────────────────────────────────
 #[derive(Clone, Debug, Default)]

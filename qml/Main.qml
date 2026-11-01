@@ -1,5 +1,5 @@
-// WinRun 管理器主窗口：自绘标题栏 + 侧栏 + 四页面 + 状态栏 + 弹层
-// 修改本文件后直接 cargo build 即可，build.rs 会保证重新链接
+// WinRun 管理器 —— 界面
+// 版式参考 macOS 设置：侧栏 + 大标题 + 分组列表 + 右侧按钮；浅色/深色跟随系统
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -9,46 +9,54 @@ import WinRun
 ApplicationWindow {
     id: root
 
-    // ── 主题 ────────────────────────────────────────────────
+    // ── 设计变量 ────────────────────────────────────────────
     readonly property QtObject c: QtObject {
-        readonly property color accent: "#6366f1"
-        readonly property color accentHover: "#737af2"
+        readonly property color accent: "#5b5bd6"
+        readonly property color accentText: dark ? "#a9a9f7" : "#4a4ac4"
+        readonly property color accentSoft: dark ? "#2a2a3d" : "#ecedfb"
+        readonly property color accentHover: "#6f6fe0"
         readonly property bool dark: Qt.styleHints.colorScheme === Qt.Dark
-        readonly property color windowBg: dark ? "#1e1f24" : "#f5f5f7"
-        readonly property color sidebarBg: dark ? "#232429" : "#ececed"
-        readonly property color cardBg: dark ? "#2b2c33" : "#ffffff"
-        readonly property color cardBgHover: dark ? "#33343c" : "#fafafa"
-        readonly property color cardBorder: dark ? "#3a3b43" : "#e2e2e5"
-        readonly property color fieldBg: dark ? "#26272d" : "#ffffff"
-        readonly property color fieldBorder: dark ? "#3d3e46" : "#d8d8dc"
-        readonly property color text: dark ? "#f2f2f4" : "#1d1d1f"
-        readonly property color textDim: dark ? "#9a9aa2" : "#6e6e73"
-        readonly property color hover: dark ? "#14ffffff" : "#0a000000"
-        readonly property color danger: "#e5484d"
-        readonly property color separator: dark ? "#14ffffff" : "#14000000"
+        readonly property color window: dark ? "#1c1c1e" : "#ffffff"
+        readonly property color sidebar: dark ? "#232325" : "#f3f3f5"
+        readonly property color group: dark ? "#232325" : "#f7f7f8"
+        readonly property color row: dark ? "#2c2c2e" : "#ffffff"
+        readonly property color rowHover: dark ? "#333336" : "#f5f5f7"
+        readonly property color line: dark ? "#3a3a3d" : "#e6e6e8"
+        readonly property color field: dark ? "#2c2c2e" : "#ffffff"
+        readonly property color fieldLine: dark ? "#48484b" : "#dcdce0"
+        readonly property color text: dark ? "#f5f5f7" : "#1d1d1f"
+        readonly property color dim: dark ? "#9d9da3" : "#6e6e73"
+        readonly property color faint: dark ? "#6c6c72" : "#98989d"
+        readonly property color danger: "#d9483f"
+        readonly property color hover: dark ? "#16ffffff" : "#0a000000"
+        readonly property color press: dark ? "#24ffffff" : "#14000000"
     }
 
-    // ── 文案 ────────────────────────────────────────────────
     readonly property bool zh: backend.zh
-    readonly property string tTitle: zh ? "WinRun 管理器" : "WinRun Manager"
+    readonly property bool configureMode: backend.startup_exe() !== ""
+
+    // ── 文案 ────────────────────────────────────────────────
+    readonly property string appName: "WinRun"
     readonly property var pageNames: [zh ? "应用" : "Apps", zh ? "Linux 程序" : "Linux Apps",
                                        zh ? "进程" : "Processes", zh ? "目录" : "Folders"]
-    readonly property int pageCount: 4
     readonly property var pageKeys: ["apps", "linux", "procs", "dirs"]
-    readonly property var searchHints: [
-        zh ? "搜索应用（Ctrl+F）" : "Search apps (Ctrl+F)",
-        zh ? "搜索 Linux 程序 (Ctrl+F)" : "Search Linux apps (Ctrl+F)",
-        zh ? "搜索进程名、PID 或命令行（Ctrl+F）" : "Search name, PID or command line (Ctrl+F)",
-        zh ? "搜索目录（Ctrl+F）" : "Search folders (Ctrl+F)"
+    readonly property var pageTitles: [
+        zh ? "应用" : "Applications",
+        zh ? "Linux 程序" : "Linux Apps",
+        zh ? "正在运行的进程" : "Running Processes",
+        zh ? "安装目录" : "Install Folders"
     ]
-    readonly property var pageDescs: [
-        "",
-        zh ? "在当前前置环境里启动 Linux 原生程序；前置环境开了独立网络时会与加速器同网络"
-           : "Launch native Linux apps in the selected prefix; joins the independent network when enabled",
-        zh ? "强制结束运行中的 Windows 程序进程，程序卡死时用。"
-           : "Force close running Windows program processes.",
-        zh ? "前缀里 Windows 程序的安装文件夹；选中里面的 exe 可以创建应用配置。"
-           : "Install folders inside the prefix; pick an exe to create an app config."
+    readonly property var pageSubtitles: [
+        zh ? "前缀里登记过的 Windows 程序，可以运行、改设置、看日志。" : "Windows programs registered in this prefix.",
+        zh ? "把 Linux 原生程序放进同一个前缀与网络里启动。" : "Start native Linux programs inside the same prefix.",
+        zh ? "这个前缀里的 Windows 进程，卡死时强制结束。" : "Windows processes of this prefix.",
+        zh ? "前缀里含 exe 的安装文件夹，可以直接生成应用配置。" : "Install folders containing executables."
+    ]
+    readonly property var searchHints: [
+        zh ? "搜索应用" : "Search apps",
+        zh ? "搜索程序" : "Search apps",
+        zh ? "搜索进程名、PID 或命令行" : "Search name, PID or command",
+        zh ? "搜索目录" : "Search folders"
     ]
 
     // ── 状态 ────────────────────────────────────────────────
@@ -57,7 +65,6 @@ ApplicationWindow {
     property string linuxPrefix: ""
     property string dirsPrefix: ""
     property string procsPrefix: ""
-    property bool configureMode: backend.startup_exe() !== ""
     property var runnersModel: []
     property var resolutionsModel: []
     property var fpsModel: []
@@ -66,20 +73,18 @@ ApplicationWindow {
     property string exesTitle: ""
     property string renameTarget: ""
     property string currentLogAppId: ""
-    property string appsSearch: ""
-    property string linuxSearch: ""
-    property string procsSearch: ""
-    property string dirsSearch: ""
+    property string logTitle: ""
+    property var searchValues: ["", "", "", ""]
     readonly property var searchKeys: ["appsSearch", "linuxSearch", "procsSearch", "dirsSearch"]
 
     visible: true
-    width: configureMode ? 620 : 1120
-    height: configureMode ? 720 : 740
-    minimumWidth: configureMode ? 560 : 880
-    minimumHeight: configureMode ? 620 : 560
-    color: c.windowBg
+    width: configureMode ? 640 : 1180
+    height: configureMode ? 780 : 780
+    minimumWidth: configureMode ? 580 : 980
+    minimumHeight: configureMode ? 640 : 620
+    color: c.window
     flags: Qt.Window | Qt.FramelessWindowHint
-    title: tTitle
+    title: configureMode ? (zh ? "运行设置" : "Run Settings") : appName + " · " + pageTitles[currentPage]
 
     Backend {
         id: backend
@@ -103,14 +108,11 @@ ApplicationWindow {
             for (var i = 0; i < names.length; i++) {
                 if (names[i] === "toggle") {
                     if (configureMode) {
-                        root.show()
-                        root.raise()
+                        root.show(); root.raise()
                     } else if (root.visible) {
                         root.hide()
                     } else {
-                        root.show()
-                        root.raise()
-                        refreshCurrent()
+                        root.show(); root.raise(); refreshCurrent()
                     }
                 } else if (names[i] === "config") {
                     editEntry = backend.config_entry
@@ -148,22 +150,32 @@ ApplicationWindow {
         }
     }
 
-    Shortcut {
-        sequence: "Ctrl+F"
-        onActivated: pageSearch.focus = true
+    Shortcut { sequence: "Ctrl+F"; onActivated: pageSearchField.forceActiveFocus() }
+    Shortcut { sequence: "Ctrl+1"; onActivated: root.switchPage(0) }
+    Shortcut { sequence: "Ctrl+2"; onActivated: root.switchPage(1) }
+    Shortcut { sequence: "Ctrl+3"; onActivated: root.switchPage(2) }
+    Shortcut { sequence: "Ctrl+4"; onActivated: root.switchPage(3) }
+
+    function switchPage(index) {
+        if (configureMode) return
+        currentPage = index
+        refreshCurrent()
+    }
+
+    function currentPrefix() {
+        return currentPage === 0 ? appsPrefix : currentPage === 1 ? linuxPrefix
+             : currentPage === 2 ? procsPrefix : dirsPrefix
+    }
+
+    function setPrefix(value) {
+        if (currentPage === 0) appsPrefix = value
+        else if (currentPage === 1) linuxPrefix = value
+        else if (currentPage === 2) procsPrefix = value
+        else dirsPrefix = value
     }
 
     function refreshCurrent() {
-        var prefix = currentPage === 0 ? appsPrefix : currentPage === 1 ? linuxPrefix
-                   : currentPage === 2 ? procsPrefix : dirsPrefix
-        backend.refresh_page(pageKeys[currentPage], prefix)
-    }
-
-    function refreshAll() {
-        backend.refresh_page("apps", appsPrefix)
-        backend.refresh_page("linux", linuxPrefix)
-        backend.refresh_page("procs", procsPrefix)
-        backend.refresh_page("dirs", dirsPrefix)
+        backend.refresh_page(pageKeys[currentPage], currentPrefix())
     }
 
     function confirm(title, message, action) {
@@ -173,37 +185,40 @@ ApplicationWindow {
         confirmPopup.open()
     }
 
-    // ── 通用控件 ────────────────────────────────────────────
+    // ── 基础控件 ────────────────────────────────────────────
     component WButton: Button {
         id: wb
         implicitHeight: 32
-        padding: 12
+        padding: 14
+        hoverEnabled: true
         background: Rectangle {
-            radius: 7
-            color: wb.pressed ? c.separator : (wb.hovered ? c.hover : "transparent")
-            border.width: 1
-            border.color: c.fieldBorder
+            radius: 8
+            color: wb.pressed ? c.press : (wb.hovered ? c.hover : "transparent")
+            border.width: wb.subtle ? 0 : 1
+            border.color: c.fieldLine
         }
         contentItem: Text {
             text: wb.text
-            font.pixelSize: 12
-            color: wb.enabled ? c.text : c.textDim
+            font.pixelSize: 13
+            color: wb.enabled ? c.text : c.faint
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
         }
+        /// 轻量按钮：无边框，只在悬停时有一层底色
+        property bool subtle: false
     }
 
     component WAccentButton: Button {
         id: wab
         implicitHeight: 32
-        padding: 14
+        padding: 16
         background: Rectangle {
-            radius: 7
-            color: !wab.enabled ? c.textDim : (wab.pressed || wab.hovered ? c.accentHover : c.accent)
+            radius: 8
+            color: !wab.enabled ? c.line : (wab.pressed || wab.hovered ? c.accentHover : c.accent)
         }
         contentItem: Text {
             text: wab.text
-            font.pixelSize: 12
+            font.pixelSize: 13
             font.weight: Font.DemiBold
             color: "#ffffff"
             horizontalAlignment: Text.AlignHCenter
@@ -214,105 +229,124 @@ ApplicationWindow {
     component WDangerButton: Button {
         id: wdb
         implicitHeight: 32
-        padding: 12
+        padding: 14
         background: Rectangle {
-            radius: 7
+            radius: 8
             color: wdb.hovered || wdb.pressed ? c.danger : "transparent"
             border.width: 1
-            border.color: wdb.hovered || wdb.pressed ? c.danger : c.fieldBorder
+            border.color: wdb.hovered || wdb.pressed ? c.danger : c.fieldLine
         }
         contentItem: Text {
             text: wdb.text
-            font.pixelSize: 12
+            font.pixelSize: 13
             color: wdb.hovered || wdb.pressed ? "#ffffff" : c.danger
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
         }
     }
 
-    component WCheckBox: CheckBox {
-        id: wcbx
-        implicitHeight: 26
-        spacing: 8
-        indicator: Rectangle {
-            implicitWidth: 18
-            implicitHeight: 18
-            x: wcbx.leftPadding
-            y: (wcbx.height - height) / 2
-            radius: 5
-            color: wcbx.checked ? (wcbx.enabled ? c.accent : c.textDim) : "transparent"
-            border.width: 1
-            border.color: wcbx.checked ? (wcbx.enabled ? c.accent : c.textDim) : c.fieldBorder
-            Text {
-                anchors.centerIn: parent
-                visible: wcbx.checked
-                text: "✓"
-                color: "#ffffff"
-                font.pixelSize: 11
-                font.weight: Font.Bold
-            }
+    component WIconButton: Button {
+        id: wib
+        property string glyph: "⋯"
+        property int glyphSize: 14
+        implicitWidth: 30
+        implicitHeight: 30
+        background: Rectangle {
+            radius: 7
+            color: wib.pressed ? c.press : (wib.hovered ? c.hover : "transparent")
         }
         contentItem: Text {
-            text: wcbx.text
-            leftPadding: wcbx.indicator.width + wcbx.spacing
-            font.pixelSize: 12
-            color: wcbx.enabled ? c.text : c.textDim
+            text: wib.glyph
+            font.pixelSize: wib.glyphSize
+            color: c.dim
+            horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
         }
+        ToolTip.visible: hovered && ToolTip.text !== ""
+        ToolTip.delay: 500
     }
 
     component WField: TextField {
         id: wf
         implicitHeight: 34
-        opacity: enabled ? 1 : 0.55
+        opacity: enabled ? 1 : 0.5
+        leftPadding: 11
+        rightPadding: 11
         color: c.text
-        placeholderTextColor: c.textDim
+        placeholderTextColor: c.faint
+        font.pixelSize: 13
         selectByMouse: true
+        selectionColor: c.accent
         background: Rectangle {
-            radius: 7
-            color: c.fieldBg
+            radius: 8
+            color: c.field
             border.width: 1
-            border.color: wf.activeFocus ? c.accent : c.fieldBorder
+            border.color: wf.activeFocus ? c.accent : c.fieldLine
+        }
+    }
+
+    component WSearchField: TextField {
+        id: ws
+        implicitHeight: 34
+        leftPadding: 32
+        rightPadding: 11
+        color: c.text
+        placeholderTextColor: c.faint
+        font.pixelSize: 13
+        selectByMouse: true
+        selectionColor: c.accent
+        background: Rectangle {
+            radius: 8
+            color: c.field
+            border.width: 1
+            border.color: ws.activeFocus ? c.accent : c.fieldLine
+            Text {
+                x: 11
+                anchors.verticalCenter: parent.verticalCenter
+                text: "⌕"
+                font.pixelSize: 15
+                color: c.faint
+            }
         }
     }
 
     component WComboBox: ComboBox {
         id: wcb
         implicitHeight: 34
-        font.pixelSize: 12
-        opacity: enabled ? 1 : 0.55
+        font.pixelSize: 13
         editable: true
+        opacity: enabled ? 1 : 0.5
         background: Rectangle {
-            radius: 7
-            color: c.fieldBg
+            radius: 8
+            color: c.field
             border.width: 1
-            border.color: wcb.activeFocus ? c.accent : c.fieldBorder
+            border.color: wcb.activeFocus ? c.accent : c.fieldLine
         }
         contentItem: TextInput {
             text: wcb.editText
-            font.pixelSize: 12
+            font.pixelSize: 13
             color: c.text
             selectionColor: c.accent
             verticalAlignment: Text.AlignVCenter
-            leftPadding: 10
-            rightPadding: wcb.indicator.width + 6
+            leftPadding: 11
+            rightPadding: wcb.indicator.width + 8
             selectByMouse: true
             onTextEdited: wcb.editText = text
             onAccepted: wcb.activate()
         }
         indicator: Canvas {
-            x: wcb.width - width - 10
+            x: wcb.width - width - 11
             y: (wcb.height - height) / 2
-            width: 10
-            height: 6
+            width: 9
+            height: 5
             onPaint: {
                 var ctx = getContext("2d")
-                ctx.strokeStyle = c.textDim
-                ctx.lineWidth = 1.6
+                ctx.strokeStyle = c.faint
+                ctx.lineWidth = 1.5
                 ctx.beginPath()
                 ctx.moveTo(0, 0)
-                ctx.lineTo(5, 5)
-                ctx.lineTo(10, 0)
+                ctx.lineTo(4.5, 4.5)
+                ctx.lineTo(9, 0)
                 ctx.stroke()
             }
         }
@@ -320,163 +354,228 @@ ApplicationWindow {
             id: wcbItem
             required property var modelData
             required property int index
-            width: wcb.width
+            width: wcb.width - 8
+            height: 32
             contentItem: Text {
+                leftPadding: 8
                 text: wcb.textRole !== "" && wcbItem.modelData ? wcbItem.modelData[wcb.textRole] : wcbItem.modelData
                 color: wcbItem.highlighted ? "#ffffff" : c.text
-                font.pixelSize: 12
+                font.pixelSize: 13
                 verticalAlignment: Text.AlignVCenter
                 elide: Text.ElideMiddle
             }
             highlighted: wcb.highlightedIndex === wcbItem.index
-            background: Rectangle { color: wcbItem.highlighted ? c.accent : "transparent"; radius: 6 }
+            background: Rectangle {
+                radius: 6
+                color: wcbItem.highlighted ? c.accent : "transparent"
+            }
         }
         popup: Popup {
-            y: wcb.height + 4
+            y: wcb.height + 6
+            x: 0
             width: wcb.width
             padding: 4
             background: Rectangle {
                 radius: 10
-                color: c.cardBg
+                color: c.row
                 border.width: 1
-                border.color: c.cardBorder
+                border.color: c.line
             }
             contentItem: ListView {
                 clip: true
-                implicitHeight: Math.min(contentHeight, 320)
+                implicitHeight: Math.min(contentHeight, 300)
                 model: wcb.popup.visible ? wcb.delegateModel : null
                 currentIndex: wcb.highlightedIndex
             }
         }
         function activate() {
-            // 可编辑组合框确认输入：视图是 {value:{...}} 时取对应字段
-            if (typeof currentValue !== "undefined" && currentValue !== null) {
-                activated(currentIndex)
+            if (typeof currentValue !== "undefined" && currentValue !== null) activated(currentIndex)
+        }
+    }
+
+    component WCheckBox: CheckBox {
+        id: wcbx
+        implicitHeight: 26
+        spacing: 9
+        indicator: Rectangle {
+            implicitWidth: 18
+            implicitHeight: 18
+            x: wcbx.leftPadding
+            y: (wcbx.height - height) / 2
+            radius: 5
+            color: wcbx.checked ? (wcbx.enabled ? c.accent : c.faint) : "transparent"
+            border.width: 1
+            border.color: wcbx.checked ? (wcbx.enabled ? c.accent : c.faint) : c.fieldLine
+            Text {
+                anchors.centerIn: parent
+                visible: wcbx.checked
+                text: "✓"
+                color: "#ffffff"
+                font.pixelSize: 11
+                font.bold: true
+            }
+        }
+        contentItem: Text {
+            text: wcbx.text
+            leftPadding: wcbx.indicator.width + wcbx.spacing
+            font.pixelSize: 13
+            color: wcbx.enabled ? c.text : c.faint
+            verticalAlignment: Text.AlignVCenter
+        }
+    }
+
+    // 前缀选择：一个带下拉菜单的按钮
+    component PrefixPicker: Button {
+        id: picker
+        implicitHeight: 34
+        implicitWidth: Math.min(420, labelText.implicitWidth + 50)
+        property var model: backend.prefixes
+        property string value: root.currentPrefix()
+        background: Rectangle {
+            radius: 8
+            color: picker.hovered || picker.pressed ? c.rowHover : c.field
+            border.width: 1
+            border.color: picker.activeFocus ? c.accent : c.fieldLine
+        }
+        contentItem: Item {
+            Text {
+                id: labelText
+                anchors.left: parent.left
+                anchors.leftMargin: 11
+                anchors.right: chevron.left
+                anchors.rightMargin: 8
+                anchors.verticalCenter: parent.verticalCenter
+                text: root.prefixLabel(picker.value)
+                font.pixelSize: 13
+                color: c.text
+                elide: Text.ElideMiddle
+            }
+            Text {
+                id: chevron
+                anchors.right: parent.right
+                anchors.rightMargin: 11
+                anchors.verticalCenter: parent.verticalCenter
+                text: "⌄"
+                font.pixelSize: 13
+                color: c.faint
+            }
+        }
+        onClicked: prefixMenu.popup(picker, 0, picker.height + 6)
+        Menu {
+            id: prefixMenu
+            width: Math.max(320, picker.width)
+            padding: 4
+            background: Rectangle { radius: 10; color: c.row; border.width: 1; border.color: c.line }
+            Instantiator {
+                model: picker.model
+                delegate: MenuItem {
+                    id: prefixItem
+                    required property var modelData
+                    required property int index
+                    height: 32
+                    contentItem: Text {
+                        leftPadding: 8
+                        text: root.prefixLabel(modelData.path)
+                        color: prefixItem.highlighted ? "#ffffff" : c.text
+                        font.pixelSize: 13
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideMiddle
+                    }
+                    background: Rectangle {
+                        radius: 6
+                        color: prefixItem.highlighted ? c.accent : "transparent"
+                    }
+                    onTriggered: {
+                        root.setPrefix(modelData.path)
+                        root.refreshCurrent()
+                    }
+                }
+                onObjectAdded: (index, object) => prefixMenu.insertItem(index, object)
+                onObjectRemoved: (index, object) => prefixMenu.removeItem(object)
             }
         }
     }
 
-    component PrefixSelector: RowLayout {
-        id: ps
-        property string page: "apps"
-        spacing: 8
-        WComboBox {
-            id: combo
-            Layout.fillWidth: true
-            model: ps.page === "procs" ? backend.processPrefixes : backend.prefixes
-            textRole: ps.page === "procs" ? "label" : "path"
-            Component.onCompleted: {
-                if (ps.page === "procs") {
-                    if (backend.processPrefixes.length) {
-                        editText = backend.processPrefixes[0].label
-                        root.procsPrefix = backend.processPrefixes[0].path
-                    }
-                } else if (backend.prefixes.length) {
-                    editText = backend.prefixes[0].path
-                    if (ps.page === "apps") root.appsPrefix = editText
-                    else if (ps.page === "linux") root.linuxPrefix = editText
-                    else root.dirsPrefix = editText
-                }
-            }
-            onAccepted: apply()
-            onActivated: apply()
-            function apply() {
-                if (ps.page === "procs") {
-                    for (var i = 0; i < backend.processPrefixes.length; i++) {
-                        if (backend.processPrefixes[i].label === editText) root.procsPrefix = backend.processPrefixes[i].path
-                    }
-                } else if (ps.page === "apps") {
-                    root.appsPrefix = editText
-                } else if (ps.page === "linux") {
-                    root.linuxPrefix = editText
-                } else {
-                    root.dirsPrefix = editText
-                }
-                root.refreshCurrent()
-            }
-        }
-        Button {
-            implicitWidth: 32
-            implicitHeight: 32
-            background: Rectangle { radius: 7; color: parent.hovered ? c.hover : "transparent" }
-            contentItem: Text { text: "⌂"; color: c.textDim; font.pixelSize: 14; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-            ToolTip.visible: hovered
-            ToolTip.delay: 500
-            ToolTip.text: zh ? "打开前置环境目录" : "Open Prefix Folder"
-            onClicked: backend.open_folder(ps.page === "procs" ? root.procsPrefix
-                                          : ps.page === "apps" ? root.appsPrefix
-                                          : ps.page === "linux" ? root.linuxPrefix : root.dirsPrefix)
-        }
-        Button {
-            implicitWidth: 32
-            implicitHeight: 32
-            visible: ps.page !== "procs"
-            background: Rectangle { radius: 7; color: parent.hovered ? c.hover : "transparent" }
-            contentItem: Text { text: "✕"; color: c.danger; font.pixelSize: 12; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-            ToolTip.visible: hovered
-            ToolTip.delay: 500
-            ToolTip.text: zh ? "删除前置环境" : "Delete Prefix"
-            onClicked: {
-                var path = ps.page === "apps" ? root.appsPrefix : ps.page === "linux" ? root.linuxPrefix : root.dirsPrefix
-                root.confirm(zh ? "删除前置环境" : "Delete Prefix",
-                    (zh ? "将永久删除以下前置环境及其中所有文件：\n\n"
-                        : "This will permanently delete this prefix and all files inside:\n\n") + path
-                    + (zh ? "\n\n请确认该前置环境内没有需要保留的存档、配置或用户数据。是否继续？"
-                          : "\n\nMake sure there are no saves or user data you want to keep. Continue?"),
-                    function () { backend.delete_prefix(path) })
-            }
-        }
+    function prefixLabel(path) {
+        if (!path) return zh ? "没有前缀" : "No prefix"
+        var pieces = path.split("/")
+        var tail = pieces.slice(-2).join("/")
+        return path.length > 46 ? "…/" + tail : path
     }
 
     // ── 标题栏 ──────────────────────────────────────────────
-    header: ToolBar {
-        background: Rectangle {
-            color: c.sidebarBg
-            MouseArea {
-                anchors.fill: parent
-                onPressed: root.startSystemMove()
-                onDoubleClicked: root.toggleMaximized()
-            }
+    header: Rectangle {
+        height: 46
+        color: root.configureMode ? c.window : c.sidebar
+        MouseArea {
+            anchors.fill: parent
+            onPressed: root.startSystemMove()
+            onDoubleClicked: root.toggleMaximized()
         }
-        contentItem: RowLayout {
-            spacing: 8
-            Item { Layout.preferredWidth: 6 }
-            Label {
-                text: tTitle
+        RowLayout {
+            anchors.fill: parent
+            anchors.leftMargin: 16
+            anchors.rightMargin: 8
+            spacing: 10
+
+            Rectangle {
+                visible: !root.configureMode
+                Layout.preferredWidth: 20
+                Layout.preferredHeight: 20
+                radius: 6
+                color: c.accent
+                Text {
+                    anchors.centerIn: parent
+                    text: "W"
+                    color: "#ffffff"
+                    font.pixelSize: 11
+                    font.bold: true
+                }
+            }
+            Text {
+                text: root.appName
                 font.pixelSize: 13
                 font.weight: Font.DemiBold
                 color: c.text
             }
+            Text {
+                text: root.configureMode ? (root.zh ? "运行设置" : "Run Settings") : "· " + root.pageTitles[root.currentPage]
+                font.pixelSize: 13
+                color: c.dim
+            }
             Item { Layout.fillWidth: true }
-            component WinButton: AbstractButton {
-                id: winBtn
+
+            component TitleBarButton: AbstractButton {
+                id: tb
                 property string glyph: ""
-                property color hoverColor: c.hover
-                implicitWidth: 34
+                property bool danger: false
+                implicitWidth: 32
                 implicitHeight: 26
                 background: Rectangle {
                     radius: 6
-                    color: winBtn.pressed ? c.separator : (winBtn.hovered ? winBtn.hoverColor : "transparent")
+                    color: tb.danger && tb.hovered ? c.danger : (tb.hovered ? c.hover : "transparent")
                 }
                 contentItem: Text {
-                    text: winBtn.glyph
+                    text: tb.glyph
                     font.pixelSize: 11
-                    color: winBtn.hovered && winBtn.hoverColor === c.danger ? "#ffffff" : c.textDim
+                    color: tb.danger && tb.hovered ? "#ffffff" : c.dim
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
                 }
             }
-            WinButton { glyph: "—"; onClicked: root.showMinimized() }
-            WinButton { glyph: "▢"; onClicked: root.toggleMaximized() }
-            WinButton {
+            TitleBarButton { glyph: "—"; onClicked: root.showMinimized() }
+            TitleBarButton { glyph: "▢"; onClicked: root.toggleMaximized() }
+            TitleBarButton {
                 glyph: "✕"
-                hoverColor: c.danger
-                onClicked: {
-                    if (configureMode) Qt.quit()
-                    else root.hide()
-                }
+                danger: true
+                onClicked: { if (root.configureMode) Qt.quit(); else root.hide() }
             }
-            Item { Layout.preferredWidth: 8 }
+        }
+        Rectangle {
+            anchors.bottom: parent.bottom
+            width: parent.width
+            height: 1
+            color: c.line
         }
     }
 
@@ -485,63 +584,95 @@ ApplicationWindow {
         else root.showMaximized()
     }
 
-    // ── 主体 ────────────────────────────────────────────────
-    ColumnLayout {
+    // ── 侧栏 + 内容 ─────────────────────────────────────────
+    RowLayout {
         anchors.fill: parent
         spacing: 0
-        visible: !configureMode
 
-        RowLayout {
+        Rectangle {
+            visible: !root.configureMode
+            Layout.preferredWidth: 224
+            Layout.fillHeight: true
+            color: c.sidebar
+
+            ColumnLayout {
+                anchors.fill: parent
+                anchors.topMargin: 14
+                anchors.bottomMargin: 12
+                anchors.leftMargin: 12
+                anchors.rightMargin: 12
+                spacing: 2
+
+                Text {
+                    text: root.zh ? "导航" : "SECTIONS"
+                    font.pixelSize: 11
+                    font.letterSpacing: 0.8
+                    color: c.faint
+                    Layout.leftMargin: 10
+                    Layout.bottomMargin: 6
+                }
+
+                Repeater {
+                    model: root.pageNames.length
+                    delegate: AbstractButton {
+                        id: navBtn
+                        required property int index
+                        Layout.fillWidth: true
+                        implicitHeight: 34
+                        background: Rectangle {
+                            radius: 8
+                            color: navBtn.index === root.currentPage ? c.accentSoft
+                                 : (navBtn.hovered ? c.hover : "transparent")
+                        }
+                        contentItem: Text {
+                            leftPadding: 12
+                            text: root.pageNames[navBtn.index]
+                            color: navBtn.index === root.currentPage ? c.accentText : c.text
+                            font.pixelSize: 13
+                            font.weight: navBtn.index === root.currentPage ? Font.DemiBold : Font.Normal
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                        onClicked: root.switchPage(navBtn.index)
+                    }
+                }
+
+                Item { Layout.fillHeight: true }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    implicitHeight: 1
+                    color: c.line
+                    Layout.bottomMargin: 8
+                }
+                Text {
+                    Layout.leftMargin: 10
+                    text: root.zh ? "本地维护版" : "Locally maintained"
+                    font.pixelSize: 11
+                    color: c.faint
+                }
+                Text {
+                    Layout.leftMargin: 10
+                    text: "Proton / Wine"
+                    font.pixelSize: 11
+                    color: c.faint
+                }
+            }
+        }
+
+        Rectangle {
+            visible: !root.configureMode
+            Layout.preferredWidth: 1
+            Layout.fillHeight: true
+            color: c.line
+        }
+
+        // 页面区
+        ColumnLayout {
+            visible: !root.configureMode
             Layout.fillWidth: true
             Layout.fillHeight: true
             spacing: 0
 
-            // 侧栏
-            Rectangle {
-                Layout.preferredWidth: 190
-                Layout.fillHeight: true
-                color: c.sidebarBg
-
-                ColumnLayout {
-                    anchors.fill: parent
-                    anchors.topMargin: 14
-                    anchors.leftMargin: 10
-                    anchors.rightMargin: 10
-                    spacing: 4
-
-                    Repeater {
-                        model: root.pageCount
-                        delegate: AbstractButton {
-                            id: navBtn
-                            required property int index
-                            Layout.fillWidth: true
-                            implicitHeight: 36
-                            background: Rectangle {
-                                radius: 8
-                                color: navBtn.index === root.currentPage
-                                       ? c.accent : (navBtn.hovered ? c.hover : "transparent")
-                            }
-                            contentItem: Text {
-                                leftPadding: 12
-                                text: root.pageNames[navBtn.index]
-                                color: navBtn.index === root.currentPage ? "#ffffff" : c.text
-                                font.pixelSize: 13
-                                font.weight: navBtn.index === root.currentPage ? Font.DemiBold : Font.Normal
-                                verticalAlignment: Text.AlignVCenter
-                            }
-                            onClicked: {
-                                root.currentPage = navBtn.index
-                                root.refreshCurrent()
-                            }
-                        }
-                    }
-                    Item { Layout.fillHeight: true }
-                }
-            }
-
-            Rectangle { Layout.preferredWidth: 1; Layout.fillHeight: true; color: c.separator }
-
-            // 页面区
             StackLayout {
                 id: pageStack
                 currentIndex: root.currentPage
@@ -553,274 +684,408 @@ ApplicationWindow {
                 ProcsPage {}
                 DirsPage {}
             }
-        }
 
-        // 状态栏
-        Rectangle {
-            Layout.fillWidth: true
-            Layout.preferredHeight: 30
-            color: c.sidebarBg
-            Label {
-                anchors.left: parent.left
-                anchors.leftMargin: 14
-                anchors.right: parent.right
-                anchors.rightMargin: 14
-                anchors.verticalCenter: parent.verticalCenter
-                text: backend.status
-                color: c.textDim
-                font.pixelSize: 12
-                elide: Text.ElideMiddle
-            }
-        }
-    }
-
-    // ── 页面公共骨架：描述 + 前缀选择 + 搜索 ─────────────────
-    component PageChrome: ColumnLayout {
-        property string searchKey: "appsSearch"
-        spacing: 10
-        Label {
-            visible: text !== ""
-            text: root.pageDescs[root.currentPage]
-            color: c.textDim
-            font.pixelSize: 12
-            wrapMode: Text.WordWrap
-            Layout.fillWidth: true
-            Layout.leftMargin: 16
-            Layout.rightMargin: 16
-        }
-        RowLayout {
-            spacing: 8
-            Layout.topMargin: 14
-            Layout.leftMargin: 16
-            Layout.rightMargin: 16
-            PrefixSelector { page: root.pageKeys[root.currentPage] }
-            Item { Layout.fillWidth: true }
-        }
-        RowLayout {
-            spacing: 8
-            Layout.leftMargin: 16
-            Layout.rightMargin: 16
-            WField {
-                id: pageSearch
+            // 状态栏
+            Rectangle {
                 Layout.fillWidth: true
-                placeholderText: root.searchHints[root.currentPage]
-                text: root[root.searchKeys[root.currentPage]]
-                onTextEdited: root[root.searchKeys[root.currentPage]] = text
+                Layout.preferredHeight: 30
+                color: c.sidebar
+                Rectangle { anchors.top: parent.top; width: parent.width; height: 1; color: c.line }
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: 16
+                    anchors.rightMargin: 16
+                    spacing: 8
+                    Rectangle {
+                        width: 6
+                        height: 6
+                        radius: 3
+                        color: c.accent
+                        opacity: 0.8
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        text: backend.status
+                        color: c.dim
+                        font.pixelSize: 12
+                        elide: Text.ElideMiddle
+                    }
+                }
             }
         }
     }
 
-    component EmptyLabel: Label {
-        property var listRef
-        text: zh ? "没有匹配的结果。" : "No matches."
-        color: c.textDim
-        font.pixelSize: 12
-        horizontalAlignment: Text.AlignHCenter
+    // ── 页面骨架 ────────────────────────────────────────────
+    component PageHeader: Item {
+        implicitHeight: headLayout.implicitHeight
+        default property alias actions: actionsRow.data
+        ColumnLayout {
+            id: headLayout
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            spacing: 4
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 10
+                Text {
+                    text: root.pageTitles[root.currentPage]
+                    font.pixelSize: 21
+                    font.weight: Font.Bold
+                    color: c.text
+                }
+                Item { Layout.fillWidth: true }
+                RowLayout { id: actionsRow; spacing: 8 }
+            }
+            Text {
+                text: root.pageSubtitles[root.currentPage]
+                font.pixelSize: 13
+                color: c.dim
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+            }
+        }
+    }
+
+    component PageToolbar: RowLayout {
+        spacing: 8
+        PrefixPicker {}
+        WSearchField {
+            id: pageSearchField
+            Layout.preferredWidth: 240
+            placeholderText: root.searchHints[root.currentPage]
+            text: root.searchValues[root.currentPage]
+            onTextEdited: {
+                var copy = root.searchValues.slice()
+                copy[root.currentPage] = text
+                root.searchValues = copy
+            }
+        }
+        Item { Layout.fillWidth: true }
+    }
+
+    // 分组列表：一个圆角容器装所有行
+    component GroupList: ListView {
+        id: group
+        clip: true
+        spacing: 0
+        width: parent ? parent.width : 0
+        visible: count > 0
+
+        Rectangle {
+            z: -1
+            width: group.width
+            height: group.height
+            radius: 12
+            color: c.row
+            border.width: 1
+            border.color: c.line
+        }
+
+        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+    }
+
+    component EmptyState: ColumnLayout {
+        property string glyph: "◌"
+        property string title: ""
+        property string hint: ""
+        property var action: null
+        property string actionText: ""
         anchors.centerIn: parent
-        visible: listRef ? listRef.count === 0 : false
+        spacing: 6
+        visible: false
+        Rectangle {
+            Layout.alignment: Qt.AlignHCenter
+            implicitWidth: 52
+            implicitHeight: 52
+            radius: 26
+            color: "transparent"
+            border.width: 1
+            border.color: c.line
+            Rectangle {
+                anchors.centerIn: parent
+                width: 18
+                height: 18
+                radius: 5
+                color: c.rowHover
+                border.width: 1
+                border.color: c.line
+            }
+        }
+        Text {
+            Layout.alignment: Qt.AlignHCenter
+            text: parent.title
+            font.pixelSize: 14
+            font.weight: Font.DemiBold
+            color: c.dim
+        }
+        Text {
+            Layout.alignment: Qt.AlignHCenter
+            text: parent.hint
+            font.pixelSize: 12
+            color: c.faint
+            horizontalAlignment: Text.AlignHCenter
+        }
+        WButton {
+            Layout.alignment: Qt.AlignHCenter
+            Layout.topMargin: 6
+            visible: parent.action !== null
+            text: parent.actionText
+            onClicked: if (parent.action) parent.action()
+        }
+    }
+
+    // 行里的图标：有图就用，没有就给个占位
+    component AppIcon: Item {
+        property string source: ""
+        property int size: 38
+        implicitWidth: size
+        implicitHeight: size
+        Rectangle {
+            anchors.fill: parent
+            radius: 9
+            color: c.group
+            border.width: 1
+            border.color: c.line
+            visible: img.status !== Image.Ready
+            Text {
+                anchors.centerIn: parent
+                text: "⊞"
+                font.pixelSize: size * 0.45
+                color: c.faint
+            }
+        }
+        Image {
+            id: img
+            anchors.fill: parent
+            source: parent.source ? (parent.source.indexOf("/") === 0 ? "file://" + parent.source : parent.source) : ""
+            fillMode: Image.PreserveAspectFit
+            smooth: true
+            mipmap: true
+            visible: status === Image.Ready
+        }
     }
 
     // ── 页面：应用 ──────────────────────────────────────────
     component AppsPage: Item {
         ColumnLayout {
             anchors.fill: parent
-            spacing: 10
+            anchors.margins: 24
+            spacing: 16
 
-            PageChrome {}
-
-            RowLayout {
-                Layout.leftMargin: 16
-                Layout.rightMargin: 16
-                spacing: 8
+            PageHeader {
+                Layout.fillWidth: true
                 WButton {
-                    text: zh ? "添加配置" : "Add Config"
+                    text: root.zh ? "添加应用" : "Add App"
                     onClicked: backend.new_config(root.appsPrefix)
                 }
                 WAccentButton {
                     visible: backend.update_available
-                    text: zh ? "有更新可用" : "Update Available"
+                    text: root.zh ? "更新运行器" : "Update Runners"
                     ToolTip.visible: hovered
                     ToolTip.delay: 300
                     ToolTip.text: backend.update_details
-                    onClicked: root.confirm(zh ? "更新运行器" : "Update Runners",
-                        (zh ? "以下运行器有新版本可用，是否立即更新？\n\n" : "Updates are available for the following runners. Update now?\n\n")
+                    onClicked: root.confirm(root.zh ? "更新运行器" : "Update Runners",
+                        (root.zh ? "以下运行器有新版本可用，是否立即更新？\n\n" : "Updates available:\n\n")
                         + backend.update_details,
                         function () { backend.update_runners_now() })
                 }
-                Item { Layout.fillWidth: true }
             }
 
-            ListView {
-                id: appsList
+            PageToolbar { Layout.fillWidth: true }
+
+            Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                Layout.leftMargin: 16
-                Layout.rightMargin: 16
-                Layout.bottomMargin: 14
-                clip: true
-                spacing: 8
-                model: {
-                    var q = root.appsSearch.toLowerCase()
-                    var source = backend.apps
-                    if (q === "") return source
-                    var out = []
-                    for (var i = 0; i < source.length; i++) {
-                        var item = source[i]
-                        var hay = (item.name + " " + item.detail + " " + item.path).toLowerCase()
-                        if (hay.indexOf(q) >= 0) out.push(item)
+
+                GroupList {
+                    id: appsList
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    height: Math.min(Math.max(contentHeight, 1) + 2, parent.height)
+                    model: {
+                        var q = root.searchValues[0].toLowerCase()
+                        var source = backend.apps
+                        if (q === "") return source
+                        var out = []
+                        for (var i = 0; i < source.length; i++) {
+                            var item = source[i]
+                            var hay = (item.name + " " + item.detail + " " + item.path).toLowerCase()
+                            if (hay.indexOf(q) >= 0) out.push(item)
+                        }
+                        return out
                     }
-                    return out
-                }
-                delegate: Rectangle {
-                    width: appsList.width
-                    height: 62
-                    radius: 10
-                    color: rowMouse.containsMouse ? c.cardBgHover : c.cardBg
-                    border.width: 1
-                    border.color: c.cardBorder
+                    delegate: Rectangle {
+                        width: appsList.width
+                        height: 64
+                        color: rowMouse.containsMouse ? c.rowHover : "transparent"
 
-                    MouseArea {
-                        id: rowMouse
-                        anchors.fill: parent
-                        hoverEnabled: true
-                    }
-
-                    RowLayout {
-                        anchors.fill: parent
-                        anchors.leftMargin: 12
-                        anchors.rightMargin: 10
-                        spacing: 10
-
-                        Item {
-                            Layout.preferredWidth: 34
-                            Layout.preferredHeight: 34
-                            Image {
-                                anchors.fill: parent
-                                source: modelData.icon && modelData.icon !== "winrun" ? "file://" + modelData.icon : ""
-                                fillMode: Image.PreserveAspectFit
-                                smooth: true
-                                mipmap: true
-                            }
-                            Text {
-                                anchors.centerIn: parent
-                                text: "⊞"
-                                font.pixelSize: 18
-                                color: c.textDim
-                                visible: !modelData.icon || modelData.icon === "winrun"
-                            }
+                        Rectangle {
+                            anchors.bottom: parent.bottom
+                            x: 62
+                            width: parent.width - 62
+                            height: 1
+                            color: c.line
+                            visible: index < appsList.count - 1
                         }
 
-                        ColumnLayout {
-                            Layout.fillWidth: true
-                            spacing: 2
-                            Label {
+                        MouseArea {
+                            id: rowMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            acceptedButtons: Qt.NoButton
+                        }
+
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: 14
+                            anchors.rightMargin: 12
+                            spacing: 12
+
+                            AppIcon {
+                                source: modelData.icon && modelData.icon !== "winrun" ? modelData.icon : ""
+                            }
+
+                            ColumnLayout {
                                 Layout.fillWidth: true
-                                text: modelData.name
-                                color: c.text
-                                font.pixelSize: 13
-                                font.weight: Font.DemiBold
-                                elide: Text.ElideRight
-                            }
-                            Label {
-                                Layout.fillWidth: true
-                                text: modelData.detail
-                                color: modelData.running ? c.accent : c.textDim
-                                font.pixelSize: 11
-                                elide: Text.ElideMiddle
-                            }
-                        }
-
-                        WButton {
-                            visible: modelData.hasLog
-                            text: zh ? "日志" : "Log"
-                            onClicked: {
-                                root.currentLogAppId = modelData.appId
-                                root.logTitle = modelData.name
-                                logTextArea.text = backend.log_text(modelData.appId)
-                                logPopup.open()
-                            }
-                        }
-                        WDangerButton {
-                            visible: modelData.running
-                            text: zh ? "关闭" : "Close"
-                            onClicked: backend.close_app(modelData.appId, root.appsPrefix)
-                        }
-                        WAccentButton {
-                            visible: !modelData.running
-                            text: zh ? "运行" : "Run"
-                            ToolTip.visible: modelData.isSteam && hovered
-                            ToolTip.delay: 400
-                            ToolTip.text: zh ? "通过 Steam 启动" : "Start through Steam"
-                            onClicked: {
-                                if (modelData.isSteam && modelData.steamAppid)
-                                    backend.run_steam_game(modelData.steamAppid, modelData.path, root.appsPrefix)
-                                else
-                                    backend.run_path(modelData.path, root.appsPrefix, modelData.runner)
-                            }
-                        }
-                        WButton {
-                            visible: modelData.canConfig
-                            text: zh ? "配置" : "Config"
-                            onClicked: backend.open_config(modelData.appId, root.appsPrefix)
-                        }
-
-                        Button {
-                            id: moreBtn
-                            implicitWidth: 28
-                            implicitHeight: 28
-                            background: Rectangle { radius: 6; color: moreBtn.hovered ? c.hover : "transparent" }
-                            contentItem: Text { text: "⋯"; color: c.textDim; font.pixelSize: 14; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                            onClicked: appMenu.popup(moreBtn, 0, moreBtn.height + 2)
-                            Menu {
-                                id: appMenu
-                                width: 190
-                                background: Rectangle { radius: 10; color: c.cardBg; border.width: 1; border.color: c.cardBorder }
-                                delegate: MenuItem {
-                                    id: menuItem
-                                    height: 34
-                                    leftPadding: 12
-                                    contentItem: Text {
-                                        text: menuItem.text
+                                spacing: 2
+                                RowLayout {
+                                    spacing: 6
+                                    Text {
+                                        text: modelData.name
                                         color: c.text
-                                        font.pixelSize: 12
-                                        verticalAlignment: Text.AlignVCenter
+                                        font.pixelSize: 13
+                                        font.weight: Font.DemiBold
+                                        elide: Text.ElideRight
+                                        Layout.maximumWidth: parent.width - 70
                                     }
-                                    background: Rectangle {
-                                        radius: 6
-                                        color: menuItem.highlighted || menuItem.hovered ? c.hover : "transparent"
-                                        anchors.margins: 2
-                                    }
-                                }
-                                MenuItem { text: zh ? "重命名" : "Rename"
-                                    onTriggered: {
-                                        renameField.text = modelData.name
-                                        root.renameTarget = modelData.appId
-                                        renamePopup.open()
-                                    }
-                                }
-                                MenuItem { text: zh ? "导出到应用列表" : "Export to App List"
-                                    onTriggered: backend.export_app(modelData.appId, root.appsPrefix)
-                                }
-                                MenuItem { text: zh ? "打开目录" : "Open Folder"
-                                    onTriggered: {
-                                        var p = modelData.path
-                                        var cut = Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\"))
-                                        backend.open_folder(cut > 0 ? p.substring(0, cut) : p)
+                                    Rectangle {
+                                        visible: modelData.running
+                                        radius: 4
+                                        color: c.accentSoft
+                                        implicitWidth: runningLabel.implicitWidth + 10
+                                        implicitHeight: 16
+                                        Text {
+                                            id: runningLabel
+                                            anchors.centerIn: parent
+                                            text: root.zh ? "运行中" : "Running"
+                                            font.pixelSize: 10
+                                            color: c.accent
+                                        }
                                     }
                                 }
-                                MenuSeparator { contentItem: Rectangle { implicitHeight: 1; color: c.separator } }
-                                MenuItem { text: zh ? "删除缓存" : "Delete Cache"
-                                    onTriggered: root.confirm(zh ? "删除缓存" : "Delete Cache",
-                                        zh ? "删除此应用保存的配置？"
-                                          : "Delete this app's saved config?",
-                                        function () { backend.delete_app(modelData.appId, root.appsPrefix) })
+                                Text {
+                                    text: modelData.detail
+                                    color: c.dim
+                                    font.pixelSize: 12
+                                    elide: Text.ElideMiddle
+                                    Layout.fillWidth: true
+                                }
+                            }
+
+                            RowLayout {
+                                spacing: 6
+
+                                WButton {
+                                    visible: modelData.hasLog
+                                    subtle: true
+                                    text: root.zh ? "日志" : "Log"
+                                    onClicked: {
+                                        root.currentLogAppId = modelData.appId
+                                        root.logTitle = modelData.name
+                                        logTextArea.text = backend.log_text(modelData.appId)
+                                        logPopup.open()
+                                    }
+                                }
+                                WDangerButton {
+                                    visible: modelData.running
+                                    text: root.zh ? "关闭" : "Close"
+                                    onClicked: backend.close_app(modelData.appId, root.appsPrefix)
+                                }
+                                WAccentButton {
+                                    visible: !modelData.running
+                                    text: root.zh ? "运行" : "Run"
+                                    ToolTip.visible: modelData.isSteam && hovered
+                                    ToolTip.delay: 400
+                                    ToolTip.text: root.zh ? "通过 Steam 启动" : "Start through Steam"
+                                    onClicked: {
+                                        if (modelData.isSteam && modelData.steamAppid)
+                                            backend.run_steam_game(modelData.steamAppid, modelData.path, root.appsPrefix)
+                                        else
+                                            backend.run_path(modelData.path, root.appsPrefix, modelData.runner)
+                                    }
+                                }
+                                WButton {
+                                    visible: modelData.canConfig
+                                    subtle: true
+                                    text: root.zh ? "设置" : "Settings"
+                                    onClicked: backend.open_config(modelData.appId, root.appsPrefix)
+                                }
+                            }
+
+                            WIconButton {
+                                id: moreBtn
+                                glyph: "⋯"
+                                onClicked: appMenu.popup(moreBtn, -160, moreBtn.height + 4)
+                                Menu {
+                                    id: appMenu
+                                    width: 190
+                                    padding: 4
+                                    background: Rectangle { radius: 10; color: c.row; border.width: 1; border.color: c.line }
+                                    delegate: MenuItem {
+                                        id: menuItem
+                                        height: 32
+                                        contentItem: Text {
+                                            leftPadding: 8
+                                            text: menuItem.text
+                                            color: menuItem.highlighted ? "#ffffff" : c.text
+                                            font.pixelSize: 13
+                                            verticalAlignment: Text.AlignVCenter
+                                        }
+                                        background: Rectangle {
+                                            radius: 6
+                                            color: menuItem.highlighted ? c.accent : "transparent"
+                                        }
+                                    }
+                                    MenuItem { text: root.zh ? "重命名" : "Rename"
+                                        onTriggered: {
+                                            renameField.text = modelData.name
+                                            root.renameTarget = modelData.appId
+                                            renamePopup.open()
+                                        }
+                                    }
+                                    MenuItem { text: root.zh ? "导出到应用列表" : "Export to App List"
+                                        onTriggered: backend.export_app(modelData.appId, root.appsPrefix)
+                                    }
+                                    MenuItem { text: root.zh ? "打开所在目录" : "Open Folder"
+                                        onTriggered: {
+                                            var p = modelData.path
+                                            var cut = Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\"))
+                                            backend.open_folder(cut > 0 ? p.substring(0, cut) : p)
+                                        }
+                                    }
+                                    MenuSeparator { contentItem: Rectangle { implicitHeight: 1; color: c.line } }
+                                    MenuItem { text: root.zh ? "删除配置" : "Delete Config"
+                                        onTriggered: root.confirm(root.zh ? "删除配置" : "Delete Config",
+                                            root.zh ? "删除这个应用保存的配置？" : "Delete this app's saved settings?",
+                                            function () { backend.delete_app(modelData.appId, root.appsPrefix) })
+                                    }
                                 }
                             }
                         }
                     }
                 }
-                EmptyLabel { listRef: appsList }
-                ScrollBar.vertical: ScrollBar {}
+
+                EmptyState {
+                    glyph: "◫"
+                    title: root.zh ? "还没有应用" : "No apps yet"
+                    hint: root.zh ? "点右上角“添加应用”，或在“目录”页从一个 exe 生成配置。"
+                                  : "Add one, or create it from an executable in Folders."
+                    actionText: root.zh ? "添加应用" : "Add App"
+                    action: function () { backend.new_config(root.appsPrefix) }
+                    visible: appsList.count === 0
+                }
             }
         }
     }
@@ -836,106 +1101,97 @@ ApplicationWindow {
 
         ColumnLayout {
             anchors.fill: parent
-            spacing: 10
+            anchors.margins: 24
+            spacing: 16
 
-            PageChrome {}
-
-            RowLayout {
-                Layout.leftMargin: 16
-                Layout.rightMargin: 16
-                spacing: 8
+            PageHeader {
+                Layout.fillWidth: true
                 WField {
                     id: customCmd
-                    Layout.preferredWidth: 320
-                    placeholderText: zh ? "自定义命令，如 steam" : "Custom command, e.g. steam"
+                    Layout.preferredWidth: 260
+                    placeholderText: root.zh ? "自定义命令，如 steam" : "Custom command, e.g. steam"
                     onAccepted: launchCustom()
                 }
                 WAccentButton {
-                    text: zh ? "运行" : "Run"
+                    text: root.zh ? "运行命令" : "Run"
                     onClicked: launchCustom()
                 }
-                Item { Layout.fillWidth: true }
             }
 
-            ListView {
-                id: linuxList
+            PageToolbar { Layout.fillWidth: true }
+
+            Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                Layout.leftMargin: 16
-                Layout.rightMargin: 16
-                Layout.bottomMargin: 14
-                clip: true
-                spacing: 8
-                model: {
-                    var q = root[root.searchKeys[root.currentPage]].toLowerCase()
-                    var source = backend.linux_apps
-                    if (q === "") return source
-                    var out = []
-                    for (var i = 0; i < source.length; i++) {
-                        var item = source[i]
-                        var hay = (item.name + " " + item.id + " " + item.path).toLowerCase()
-                        if (hay.indexOf(q) >= 0) out.push(item)
+                GroupList {
+                    id: linuxList
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    height: Math.min(Math.max(contentHeight, 1) + 2, parent.height)
+                    model: {
+                        var q = root.searchValues[1].toLowerCase()
+                        var source = backend.linux_apps
+                        if (q === "") return source
+                        var out = []
+                        for (var i = 0; i < source.length; i++) {
+                            var item = source[i]
+                            var hay = (item.name + " " + item.id + " " + item.path).toLowerCase()
+                            if (hay.indexOf(q) >= 0) out.push(item)
+                        }
+                        return out
                     }
-                    return out
-                }
-                delegate: Rectangle {
-                    width: linuxList.width
-                    height: 56
-                    radius: 10
-                    color: linuxMouse.containsMouse ? c.cardBgHover : c.cardBg
-                    border.width: 1
-                    border.color: c.cardBorder
-                    MouseArea { id: linuxMouse; anchors.fill: parent; hoverEnabled: true }
-                    RowLayout {
-                        anchors.fill: parent
-                        anchors.leftMargin: 12
-                        anchors.rightMargin: 10
-                        spacing: 10
-                        Item {
-                            Layout.preferredWidth: 32
-                            Layout.preferredHeight: 32
-                            Image {
-                                anchors.fill: parent
-                                fillMode: Image.PreserveAspectFit
-                                mipmap: true
-                                source: {
-                                    var icon = modelData.icon
-                                    if (!icon) return ""
-                                    if (icon.indexOf("/") === 0) return "file://" + icon
-                                    return "image://theme/" + icon
+                    delegate: Rectangle {
+                        width: linuxList.width
+                        height: 62
+                        color: linuxMouse.containsMouse ? c.rowHover : "transparent"
+                        Rectangle {
+                            anchors.bottom: parent.bottom
+                            x: 62
+                            width: parent.width - 62
+                            height: 1
+                            color: c.line
+                            visible: index < linuxList.count - 1
+                        }
+                        MouseArea { id: linuxMouse; anchors.fill: parent; hoverEnabled: true; acceptedButtons: Qt.NoButton }
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: 14
+                            anchors.rightMargin: 12
+                            spacing: 12
+                            AppIcon { source: modelData.icon ? modelData.icon : ""; size: 36 }
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 2
+                                Text {
+                                    text: modelData.name
+                                    color: c.text
+                                    font.pixelSize: 13
+                                    font.weight: Font.DemiBold
+                                    elide: Text.ElideRight
+                                    Layout.fillWidth: true
+                                }
+                                Text {
+                                    text: modelData.path
+                                    color: c.dim
+                                    font.pixelSize: 12
+                                    elide: Text.ElideMiddle
+                                    Layout.fillWidth: true
                                 }
                             }
-                        }
-                        ColumnLayout {
-                            Layout.fillWidth: true
-                            spacing: 2
-                            Label {
-                                Layout.fillWidth: true
-                                text: modelData.name
-                                color: c.text
-                                font.pixelSize: 13
-                                font.weight: Font.DemiBold
-                                elide: Text.ElideRight
+                            WAccentButton {
+                                text: root.zh ? "运行" : "Run"
+                                onClicked: backend.launch_desktop(root.linuxPrefix, modelData.path, modelData.name)
                             }
-                            Label {
-                                Layout.fillWidth: true
-                                text: modelData.path
-                                color: c.textDim
-                                font.pixelSize: 11
-                                elide: Text.ElideMiddle
-                            }
-                        }
-                        WAccentButton {
-                            text: zh ? "运行" : "Run"
-                            onClicked: backend.launch_desktop(root.linuxPrefix, modelData.path, modelData.name)
                         }
                     }
                 }
-                EmptyLabel {
-                    listRef: linuxList
-                    text: zh ? "没有可启动的 Linux 程序" : "No launchable Linux apps"
+                EmptyState {
+                    glyph: "⌗"
+                    title: root.zh ? "没有可启动的程序" : "No launchable apps"
+                    hint: root.zh ? "系统里的 .desktop 程序会出现在这里。" : "Applications from .desktop files show up here."
+                    visible: linuxList.count === 0
                 }
-                ScrollBar.vertical: ScrollBar {}
             }
         }
     }
@@ -944,89 +1200,94 @@ ApplicationWindow {
     component ProcsPage: Item {
         ColumnLayout {
             anchors.fill: parent
-            spacing: 10
+            anchors.margins: 24
+            spacing: 16
 
-            PageChrome {}
-
-            RowLayout {
-                Layout.leftMargin: 16
-                Layout.rightMargin: 16
-                spacing: 8
+            PageHeader {
+                Layout.fillWidth: true
                 WButton {
-                    text: zh ? "刷新" : "Refresh"
+                    text: root.zh ? "刷新" : "Refresh"
                     onClicked: root.refreshCurrent()
                 }
                 WDangerButton {
-                    text: zh ? "强制关闭所有进程" : "Force Close All Processes"
+                    text: root.zh ? "结束全部进程" : "Close All"
                     onClicked: backend.kill_all_processes(root.procsPrefix)
                 }
-                Item { Layout.fillWidth: true }
             }
 
-            ListView {
-                id: procsList
+            PageToolbar { Layout.fillWidth: true }
+
+            Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                Layout.leftMargin: 16
-                Layout.rightMargin: 16
-                Layout.bottomMargin: 14
-                clip: true
-                spacing: 8
-                model: {
-                    var q = root[root.searchKeys[root.currentPage]].toLowerCase()
-                    var source = backend.procs
-                    if (q === "") return source
-                    var out = []
-                    for (var i = 0; i < source.length; i++) {
-                        var item = source[i]
-                        var hay = (item.title + " " + item.command).toLowerCase()
-                        if (hay.indexOf(q) >= 0) out.push(item)
+                GroupList {
+                    id: procsList
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    height: Math.min(Math.max(contentHeight, 1) + 2, parent.height)
+                    model: {
+                        var q = root.searchValues[2].toLowerCase()
+                        var source = backend.procs
+                        if (q === "") return source
+                        var out = []
+                        for (var i = 0; i < source.length; i++) {
+                            var item = source[i]
+                            var hay = (item.title + " " + item.command).toLowerCase()
+                            if (hay.indexOf(q) >= 0) out.push(item)
+                        }
+                        return out
                     }
-                    return out
-                }
-                delegate: Rectangle {
-                    width: procsList.width
-                    height: 56
-                    radius: 10
-                    color: procsMouse.containsMouse ? c.cardBgHover : c.cardBg
-                    border.width: 1
-                    border.color: c.cardBorder
-                    MouseArea { id: procsMouse; anchors.fill: parent; hoverEnabled: true }
-                    RowLayout {
-                        anchors.fill: parent
-                        anchors.leftMargin: 12
-                        anchors.rightMargin: 10
-                        spacing: 10
-                        ColumnLayout {
-                            Layout.fillWidth: true
-                            spacing: 2
-                            Label {
+                    delegate: Rectangle {
+                        width: procsList.width
+                        height: 58
+                        color: procsMouse.containsMouse ? c.rowHover : "transparent"
+                        Rectangle {
+                            anchors.bottom: parent.bottom
+                            x: 14
+                            width: parent.width - 14
+                            height: 1
+                            color: c.line
+                            visible: index < procsList.count - 1
+                        }
+                        MouseArea { id: procsMouse; anchors.fill: parent; hoverEnabled: true; acceptedButtons: Qt.NoButton }
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: 14
+                            anchors.rightMargin: 12
+                            spacing: 12
+                            ColumnLayout {
                                 Layout.fillWidth: true
-                                text: modelData.title
-                                color: c.text
-                                font.pixelSize: 13
-                                font.weight: Font.DemiBold
-                                elide: Text.ElideRight
+                                spacing: 2
+                                Text {
+                                    text: modelData.title
+                                    color: c.text
+                                    font.pixelSize: 13
+                                    font.weight: Font.DemiBold
+                                    elide: Text.ElideRight
+                                    Layout.fillWidth: true
+                                }
+                                Text {
+                                    text: modelData.command
+                                    color: c.dim
+                                    font.pixelSize: 12
+                                    elide: Text.ElideMiddle
+                                    Layout.fillWidth: true
+                                }
                             }
-                            Label {
-                                Layout.fillWidth: true
-                                text: modelData.command
-                                color: c.textDim
-                                font.pixelSize: 11
-                                elide: Text.ElideMiddle
+                            WDangerButton {
+                                text: root.zh ? "强制结束" : "Force Close"
+                                onClicked: backend.kill_proc(modelData.pid, true)
                             }
                         }
-                        WDangerButton {
-                            text: zh ? "强制关闭" : "Force Close"
-                            onClicked: backend.kill_proc(modelData.pid, true)
-                        }
                     }
                 }
-                EmptyLabel {
-                    listRef: procsList
-                    text: zh ? "没有找到该前置环境的运行进程。" : "No processes found for this prefix."
+                EmptyState {
+                    glyph: "◔"
+                    title: root.zh ? "没有运行中的进程" : "Nothing running"
+                    hint: root.zh ? "这个前缀里的 Windows 程序都没在跑。" : "No Windows programs are running in this prefix."
+                    visible: procsList.count === 0
                 }
-                ScrollBar.vertical: ScrollBar {}
             }
         }
     }
@@ -1035,124 +1296,150 @@ ApplicationWindow {
     component DirsPage: Item {
         ColumnLayout {
             anchors.fill: parent
-            spacing: 10
+            anchors.margins: 24
+            spacing: 16
 
-            PageChrome {}
+            PageHeader { Layout.fillWidth: true }
+            PageToolbar { Layout.fillWidth: true }
 
-            ListView {
-                id: dirsList
+            Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                Layout.leftMargin: 16
-                Layout.rightMargin: 16
-                Layout.bottomMargin: 14
-                clip: true
-                spacing: 8
-                model: {
-                    var q = root[root.searchKeys[root.currentPage]].toLowerCase()
-                    var source = backend.dirs
-                    if (q === "") return source
-                    var out = []
-                    for (var i = 0; i < source.length; i++) {
-                        var item = source[i]
-                        var hay = (item.name + " " + item.detail + " " + item.path).toLowerCase()
-                        if (hay.indexOf(q) >= 0) out.push(item)
+                GroupList {
+                    id: dirsList
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    height: Math.min(Math.max(contentHeight, 1) + 2, parent.height)
+                    model: {
+                        var q = root.searchValues[3].toLowerCase()
+                        var source = backend.dirs
+                        if (q === "") return source
+                        var out = []
+                        for (var i = 0; i < source.length; i++) {
+                            var item = source[i]
+                            var hay = (item.name + " " + item.detail + " " + item.path).toLowerCase()
+                            if (hay.indexOf(q) >= 0) out.push(item)
+                        }
+                        return out
                     }
-                    return out
-                }
-                delegate: Rectangle {
-                    width: dirsList.width
-                    height: 56
-                    radius: 10
-                    color: dirsMouse.containsMouse ? c.cardBgHover : c.cardBg
-                    border.width: 1
-                    border.color: c.cardBorder
-                    MouseArea { id: dirsMouse; anchors.fill: parent; hoverEnabled: true }
-                    RowLayout {
-                        anchors.fill: parent
-                        anchors.leftMargin: 12
-                        anchors.rightMargin: 10
-                        spacing: 10
-                        Text {
-                            text: "🗂"
-                            font.pixelSize: 20
+                    delegate: Rectangle {
+                        width: dirsList.width
+                        height: 62
+                        color: dirsMouse.containsMouse ? c.rowHover : "transparent"
+                        Rectangle {
+                            anchors.bottom: parent.bottom
+                            x: 62
+                            width: parent.width - 62
+                            height: 1
+                            color: c.line
+                            visible: index < dirsList.count - 1
                         }
-                        ColumnLayout {
-                            Layout.fillWidth: true
-                            spacing: 2
-                            Label {
-                                Layout.fillWidth: true
-                                text: modelData.name
-                                color: c.text
-                                font.pixelSize: 13
-                                font.weight: Font.DemiBold
-                                elide: Text.ElideRight
+                        MouseArea { id: dirsMouse; anchors.fill: parent; hoverEnabled: true; acceptedButtons: Qt.NoButton }
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: 14
+                            anchors.rightMargin: 12
+                            spacing: 12
+                            Rectangle {
+                                width: 36; height: 36; radius: 9
+                                color: c.group
+                                border.width: 1
+                                border.color: c.line
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "▤"
+                                    font.pixelSize: 16
+                                    color: c.faint
+                                }
                             }
-                            Label {
+                            ColumnLayout {
                                 Layout.fillWidth: true
-                                text: modelData.detail
-                                color: c.textDim
-                                font.pixelSize: 11
-                                elide: Text.ElideMiddle
+                                spacing: 2
+                                Text {
+                                    text: modelData.name
+                                    color: c.text
+                                    font.pixelSize: 13
+                                    font.weight: Font.DemiBold
+                                    elide: Text.ElideRight
+                                    Layout.fillWidth: true
+                                }
+                                Text {
+                                    text: modelData.detail
+                                    color: c.dim
+                                    font.pixelSize: 12
+                                    elide: Text.ElideMiddle
+                                    Layout.fillWidth: true
+                                }
                             }
-                        }
-                        WAccentButton {
-                            text: zh ? "应用列表" : "App List"
-                            onClicked: backend.show_dir_exes(root.dirsPrefix, modelData.path)
-                        }
-                        WButton {
-                            text: zh ? "打开目录" : "Open Folder"
-                            onClicked: backend.open_folder(modelData.path)
-                        }
-                        WDangerButton {
-                            visible: modelData.canDelete
-                            text: zh ? "删除目录" : "Delete Folder"
-                            onClicked: root.confirm(zh ? "删除安装目录" : "Delete Install Folder",
-                                (zh ? "将永久删除以下目录及其中所有文件：\n\n"
-                                    : "This will permanently delete this folder and all files inside:\n\n")
-                                + modelData.path
-                                + (zh ? "\n\n这不会运行 Windows 卸载程序，可能留下注册表、快捷方式和配置残留。是否继续？"
-                                      : "\n\nThis will not run the Windows uninstaller. Continue?"),
-                                function () { backend.delete_install_dir(modelData.path) })
+                            RowLayout {
+                                spacing: 6
+                                WAccentButton {
+                                    text: root.zh ? "查看 exe" : "Executables"
+                                    onClicked: backend.show_dir_exes(root.dirsPrefix, modelData.path)
+                                }
+                                WButton {
+                                    subtle: true
+                                    text: root.zh ? "打开" : "Open"
+                                    onClicked: backend.open_folder(modelData.path)
+                                }
+                                WDangerButton {
+                                    visible: modelData.canDelete
+                                    text: root.zh ? "删除" : "Delete"
+                                    onClicked: root.confirm(root.zh ? "删除安装目录" : "Delete Folder",
+                                        (root.zh ? "将永久删除以下目录及其中所有文件：\n\n" : "This deletes the folder and everything inside:\n\n")
+                                        + modelData.path
+                                        + (root.zh ? "\n\n不会运行 Windows 卸载程序，可能留下注册表和配置残留。"
+                                                   : "\n\nThis does not run the Windows uninstaller."),
+                                        function () { backend.delete_install_dir(modelData.path) })
+                                }
+                            }
                         }
                     }
                 }
-                EmptyLabel {
-                    listRef: dirsList
-                    text: zh ? "没有找到包含 exe 的安装目录。" : "No install folders with executables found."
+                EmptyState {
+                    glyph: "▤"
+                    title: root.zh ? "没有找到安装目录" : "No install folders"
+                    hint: root.zh ? "前缀里还没有含 exe 的目录。" : "No folder in this prefix contains executables."
+                    visible: dirsList.count === 0
                 }
-                ScrollBar.vertical: ScrollBar {}
             }
         }
     }
 
     // ── 弹层：确认 ──────────────────────────────────────────
-    property string logTitle: ""
-
     Popup {
         id: confirmPopup
         modal: true
         closePolicy: Popup.CloseOnEscape
         anchors.centerIn: Overlay.overlay
-        width: 440
-        padding: 18
-        background: Rectangle { radius: 12; color: c.cardBg; border.width: 1; border.color: c.cardBorder }
+        width: 460
+        padding: 22
+        background: Rectangle { radius: 14; color: c.row; border.width: 1; border.color: c.line }
         contentItem: ColumnLayout {
-            spacing: 12
-            Label { id: confirmTitle; font.pixelSize: 14; font.weight: Font.DemiBold; color: c.text; wrapMode: Text.WordWrap; Layout.fillWidth: true }
-            Label {
+            spacing: 14
+            Text {
+                id: confirmTitle
+                color: c.text
+                font.pixelSize: 15
+                font.weight: Font.DemiBold
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+            }
+            Text {
                 id: confirmMessage
-                font.pixelSize: 12
-                color: c.textDim
+                color: c.dim
+                font.pixelSize: 13
+                lineHeight: 1.3
                 wrapMode: Text.WrapAnywhere
                 Layout.fillWidth: true
             }
             RowLayout {
                 spacing: 8
                 Layout.alignment: Qt.AlignRight
-                WButton { text: zh ? "取消" : "Cancel"; onClicked: confirmPopup.close() }
+                WButton { text: root.zh ? "取消" : "Cancel"; onClicked: confirmPopup.close() }
                 WDangerButton {
-                    text: zh ? "确定" : "OK"
+                    text: root.zh ? "确定" : "OK"
                     onClicked: {
                         var action = root.pendingConfirm
                         confirmPopup.close()
@@ -1169,19 +1456,19 @@ ApplicationWindow {
         modal: true
         closePolicy: Popup.CloseOnEscape
         anchors.centerIn: Overlay.overlay
-        width: 380
-        padding: 18
-        background: Rectangle { radius: 12; color: c.cardBg; border.width: 1; border.color: c.cardBorder }
+        width: 400
+        padding: 22
+        background: Rectangle { radius: 14; color: c.row; border.width: 1; border.color: c.line }
         contentItem: ColumnLayout {
             spacing: 12
-            Label { text: zh ? "重命名" : "Rename"; font.pixelSize: 14; font.weight: Font.DemiBold; color: c.text }
-            Label { text: zh ? "显示名称" : "Display name"; font.pixelSize: 12; color: c.textDim }
+            Text { text: root.zh ? "重命名" : "Rename"; font.pixelSize: 15; font.weight: Font.DemiBold; color: c.text }
+            Text { text: root.zh ? "显示名称" : "Display name"; font.pixelSize: 12; color: c.dim }
             WField { id: renameField; Layout.fillWidth: true; onAccepted: renamePopup.save() }
             RowLayout {
                 spacing: 8
                 Layout.alignment: Qt.AlignRight
-                WButton { text: zh ? "取消" : "Cancel"; onClicked: renamePopup.close() }
-                WAccentButton { text: zh ? "保存" : "Save"; onClicked: renamePopup.save() }
+                WButton { text: root.zh ? "取消" : "Cancel"; onClicked: renamePopup.close() }
+                WAccentButton { text: root.zh ? "保存" : "Save"; onClicked: renamePopup.save() }
             }
         }
         function save() {
@@ -1198,35 +1485,42 @@ ApplicationWindow {
         modal: true
         closePolicy: Popup.CloseOnEscape
         anchors.centerIn: Overlay.overlay
-        width: 860
-        height: 600
-        padding: 14
-        background: Rectangle { radius: 12; color: c.cardBg; border.width: 1; border.color: c.cardBorder }
+        width: 880
+        height: 620
+        padding: 20
+        background: Rectangle { radius: 14; color: c.row; border.width: 1; border.color: c.line }
         contentItem: ColumnLayout {
-            spacing: 10
-            Label {
-                text: (zh ? "日志 · " : "Log · ") + root.logTitle
-                font.pixelSize: 14
-                font.weight: Font.DemiBold
-                color: c.text
+            spacing: 12
+            RowLayout {
+                Layout.fillWidth: true
+                Text {
+                    text: (root.zh ? "运行日志" : "Run Log") + " · " + root.logTitle
+                    font.pixelSize: 15
+                    font.weight: Font.DemiBold
+                    color: c.text
+                    elide: Text.ElideRight
+                    Layout.fillWidth: true
+                }
+                WIconButton { glyph: "✕"; onClicked: logPopup.close() }
             }
             Rectangle {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                radius: 8
-                color: c.fieldBg
+                radius: 10
+                color: c.group
                 border.width: 1
-                border.color: c.fieldBorder
+                border.color: c.line
                 ScrollView {
                     anchors.fill: parent
-                    anchors.margins: 8
+                    anchors.margins: 10
                     TextArea {
                         id: logTextArea
                         readOnly: true
                         wrapMode: TextArea.NoWrap
                         font.family: "monospace"
-                        font.pixelSize: 11
+                        font.pixelSize: 12
                         color: c.text
+                        background: null
                     }
                 }
             }
@@ -1234,14 +1528,14 @@ ApplicationWindow {
                 spacing: 8
                 Layout.alignment: Qt.AlignRight
                 WButton {
-                    text: zh ? "刷新" : "Refresh"
+                    text: root.zh ? "刷新" : "Refresh"
                     onClicked: logTextArea.text = backend.log_text(root.currentLogAppId)
                 }
                 WButton {
-                    text: zh ? "打开日志目录" : "Open Log Directory"
+                    text: root.zh ? "打开日志目录" : "Open Log Folder"
                     onClicked: backend.open_folder(backend.log_dir(root.currentLogAppId))
                 }
-                WAccentButton { text: zh ? "完成" : "Done"; onClicked: logPopup.close() }
+                WAccentButton { text: root.zh ? "完成" : "Done"; onClicked: logPopup.close() }
             }
         }
     }
@@ -1252,19 +1546,23 @@ ApplicationWindow {
         modal: true
         closePolicy: Popup.CloseOnEscape
         anchors.centerIn: Overlay.overlay
-        width: 760
+        width: 720
         height: 560
-        padding: 14
-        background: Rectangle { radius: 12; color: c.cardBg; border.width: 1; border.color: c.cardBorder }
+        padding: 20
+        background: Rectangle { radius: 14; color: c.row; border.width: 1; border.color: c.line }
         contentItem: ColumnLayout {
-            spacing: 10
-            Label {
-                text: root.exesTitle
-                font.pixelSize: 14
-                font.weight: Font.DemiBold
-                color: c.text
-                elide: Text.ElideMiddle
+            spacing: 12
+            RowLayout {
                 Layout.fillWidth: true
+                Text {
+                    text: root.exesTitle
+                    font.pixelSize: 14
+                    font.weight: Font.DemiBold
+                    color: c.text
+                    elide: Text.ElideMiddle
+                    Layout.fillWidth: true
+                }
+                WIconButton { glyph: "✕"; onClicked: exesPopup.close() }
             }
             ListView {
                 id: exesList
@@ -1274,32 +1572,31 @@ ApplicationWindow {
                 spacing: 6
                 delegate: Rectangle {
                     width: exesList.width
-                    height: 50
-                    radius: 8
-                    color: exeMouse.containsMouse ? c.cardBgHover : c.fieldBg
-                    border.width: 1
-                    border.color: c.fieldBorder
-                    MouseArea { id: exeMouse; anchors.fill: parent; hoverEnabled: true }
+                    height: 54
+                    radius: 10
+                    color: exeMouse.containsMouse ? c.rowHover : c.group
+                    MouseArea { id: exeMouse; anchors.fill: parent; hoverEnabled: true; acceptedButtons: Qt.NoButton }
                     RowLayout {
                         anchors.fill: parent
-                        anchors.leftMargin: 10
-                        anchors.rightMargin: 8
-                        spacing: 8
+                        anchors.leftMargin: 12
+                        anchors.rightMargin: 10
+                        spacing: 10
                         ColumnLayout {
                             Layout.fillWidth: true
                             spacing: 2
-                            Label { text: modelData.name; color: c.text; font.pixelSize: 12; font.weight: Font.DemiBold; elide: Text.ElideRight; Layout.fillWidth: true }
-                            Label { text: modelData.detail; color: c.textDim; font.pixelSize: 11; elide: Text.ElideMiddle; Layout.fillWidth: true }
+                            Text { text: modelData.name; color: c.text; font.pixelSize: 13; font.weight: Font.DemiBold; elide: Text.ElideRight; Layout.fillWidth: true }
+                            Text { text: modelData.detail; color: c.dim; font.pixelSize: 11; elide: Text.ElideMiddle; Layout.fillWidth: true }
                         }
                         WAccentButton {
-                            text: zh ? "加入应用" : "Add App"
+                            text: root.zh ? "加入应用" : "Add"
                             onClicked: {
                                 backend.config_from_exe(root.dirsPrefix, modelData.path)
                                 exesPopup.close()
                             }
                         }
                         WButton {
-                            text: zh ? "运行" : "Run"
+                            subtle: true
+                            text: root.zh ? "运行" : "Run"
                             onClicked: backend.run_path(modelData.path, root.dirsPrefix, "")
                         }
                     }
@@ -1309,12 +1606,12 @@ ApplicationWindow {
             RowLayout {
                 spacing: 8
                 Layout.alignment: Qt.AlignRight
-                WButton { text: zh ? "关闭" : "Close"; onClicked: exesPopup.close() }
+                WButton { text: root.zh ? "关闭" : "Close"; onClicked: exesPopup.close() }
             }
         }
     }
 
-    // ── 弹层：配置编辑 ──────────────────────────────────────
+    // ── 弹层：运行设置 ──────────────────────────────────────
     QtObject {
         id: cfg
         property string file: ""
@@ -1340,10 +1637,10 @@ ApplicationWindow {
         modal: true
         closePolicy: Popup.CloseOnEscape
         anchors.centerIn: Overlay.overlay
-        width: 560
-        height: Math.min(700, root.height - 24)
-        padding: 16
-        background: Rectangle { radius: 12; color: c.cardBg; border.width: 1; border.color: c.cardBorder }
+        width: 580
+        height: Math.min(720, root.height - 24)
+        padding: 0
+        background: Rectangle { radius: 14; color: c.row; border.width: 1; border.color: c.line }
 
         function openFor(entry) {
             cfg.exe = entry.exe || ""
@@ -1363,7 +1660,6 @@ ApplicationWindow {
             cfg.name = entry.name || entry.displayName || ""
             cfg.steamAppid = entry.steamAppid || ""
             open()
-            // 组合框的文本不是绑定，重开对话框时要手动同步一次
             Qt.callLater(function () {
                 if (cfgRunner) cfgRunner.editText = cfg.runner
                 if (cfgRes) cfgRes.editText = cfg.res
@@ -1392,205 +1688,236 @@ ApplicationWindow {
         }
 
         contentItem: ColumnLayout {
-            spacing: 10
+            spacing: 0
+
+            // 头
+            Item {
+                Layout.fillWidth: true
+                implicitHeight: 56
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: 20
+                    anchors.rightMargin: 12
+                    Text {
+                        text: cfg.name !== "" ? cfg.name : (root.zh ? "运行设置" : "Run Settings")
+                        font.pixelSize: 15
+                        font.weight: Font.DemiBold
+                        color: c.text
+                        elide: Text.ElideRight
+                        Layout.fillWidth: true
+                    }
+                    WIconButton { glyph: "✕"; onClicked: configDialog.cancelled() }
+                }
+                Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: c.line }
+            }
 
             Flickable {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 clip: true
                 contentWidth: width
-                contentHeight: formCol.implicitHeight
-
+                contentHeight: formCol.implicitHeight + 32
+                boundsBehavior: Flickable.StopAtBounds
                 ScrollBar.vertical: ScrollBar {}
 
                 ColumnLayout {
                     id: formCol
-                    width: parent.width
-                    spacing: 9
+                    x: 20
+                    y: 16
+                    width: parent.width - 40
+                    spacing: 16
 
-                    GridLayout {
-                        columns: 2
-                        columnSpacing: 10
-                        rowSpacing: 8
+                    // 常规
+                    ColumnLayout {
                         Layout.fillWidth: true
-                        Label { text: zh ? "执行文件" : "Executable"; color: c.textDim; font.pixelSize: 12 }
-                        RowLayout {
-                            spacing: 6
-                            Layout.fillWidth: true
-                            WField {
-                                id: cfgExe
-                                Layout.fillWidth: true
-                                text: cfg.exe
-                                onTextEdited: cfg.exe = text
-                            }
-                            WButton { text: zh ? "浏览" : "Browse"; onClicked: exeDialog.open() }
-                        }
-                        Label { text: zh ? "前置环境" : "Prefix"; color: c.textDim; font.pixelSize: 12 }
-                        RowLayout {
-                            spacing: 6
-                            Layout.fillWidth: true
-                            WField {
-                                id: cfgPrefix
-                                Layout.fillWidth: true
-                                text: cfg.prefix
-                                onTextEdited: cfg.prefix = text
-                            }
-                            WButton { text: zh ? "浏览" : "Browse"; onClicked: prefixDialog.open() }
-                        }
-                        Label { text: zh ? "运行器" : "Runner"; color: c.textDim; font.pixelSize: 12 }
-                        WComboBox {
-                            id: cfgRunner
-                            Layout.fillWidth: true
-                            model: root.runnersModel
-                            textRole: "label"
-                            onEditTextChanged: cfg.runner = editText
-                            onActivated: cfg.runner = editText
-                        }
-                        Label { text: zh ? "启动参数" : "Launch arguments"; color: c.textDim; font.pixelSize: 12 }
-                        WField {
-                            id: cfgArgs
-                            Layout.fillWidth: true
-                            placeholderText: "-krqlv=hd"
-                            text: cfg.programArgs
-                            onTextEdited: cfg.programArgs = text
-                        }
-                    }
-                    Label {
-                        text: zh ? "追加在程序路径后的命令行参数，例如 -krqlv=hd"
-                                : "Command-line arguments appended after the program path"
-                        color: c.textDim
-                        font.pixelSize: 11
-                        Layout.fillWidth: true
-                        wrapMode: Text.WordWrap
-                    }
-
-                    Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: c.separator }
-
-                    Label { text: "Gamescope"; color: c.text; font.pixelSize: 13; font.weight: Font.DemiBold }
-                    Label {
-                        text: zh ? "出现兼容问题时可以尝试使用 gamescope 运行"
-                                : "Try running with Gamescope when compatibility issues occur"
-                        color: c.textDim
-                        font.pixelSize: 11
-                        wrapMode: Text.WordWrap
-                        Layout.fillWidth: true
-                    }
-                    RowLayout {
-                        spacing: 16
-                        WCheckBox {
-                            id: cfgGamescope
-                            text: zh ? "使用 Gamescope" : "Use Gamescope"
-                            checked: cfg.gamescope
-                            onToggled: cfg.gamescope = checked
-                        }
-                        WCheckBox {
-                            id: cfgFullscreen
-                            text: zh ? "全屏运行" : "Fullscreen"
-                            checked: cfg.fullscreen
-                            enabled: cfgGamescope.checked
-                            onToggled: cfg.fullscreen = checked
-                        }
-                        WCheckBox {
-                            id: cfgFsr
-                            text: "FSR"
-                            checked: cfg.fsr
-                            enabled: cfgGamescope.checked
-                            onToggled: cfg.fsr = checked
-                        }
-                    }
-                    GridLayout {
-                        columns: 2
-                        columnSpacing: 10
-                        rowSpacing: 8
-                        Layout.fillWidth: true
-                        Label { text: zh ? "游戏分辨率" : "Game resolution"; color: c.textDim; font.pixelSize: 12 }
-                        WComboBox {
-                            id: cfgRes
-                            Layout.fillWidth: true
-                            model: root.resolutionsModel
-                            textRole: "value"
-                            enabled: cfgGamescope.checked
-                            onEditTextChanged: cfg.res = editText
-                            onActivated: cfg.res = editText
-                        }
-                        Label { text: zh ? "帧率限制" : "Frame-rate limit"; color: c.textDim; font.pixelSize: 12 }
-                        WComboBox {
-                            id: cfgFps
-                            Layout.fillWidth: true
-                            model: root.fpsModel
-                            textRole: "value"
-                            enabled: cfgGamescope.checked
-                            onEditTextChanged: cfg.fps = editText
-                            onActivated: cfg.fps = editText
-                        }
-                        Label { text: zh ? "Gamescope 额外参数" : "Extra Gamescope arguments"; color: c.textDim; font.pixelSize: 12 }
-                        WField {
-                            id: cfgExtra
-                            Layout.fillWidth: true
-                            text: cfg.args
-                            enabled: cfgGamescope.checked
-                            onTextEdited: cfg.args = text
-                        }
-                    }
-
-                    Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: c.separator }
-
-                    Label { text: zh ? "其他设置" : "Other Settings"; color: c.text; font.pixelSize: 13; font.weight: Font.DemiBold }
-                    WCheckBox {
-                        id: cfgMangohud
-                        text: "MangoHud"
-                        checked: cfg.mangohud
-                        onToggled: cfg.mangohud = checked
-                    }
-                    Label {
-                        text: zh ? "显示帧数和性能占用" : "Show FPS and performance usage"
-                        color: c.textDim
-                        font.pixelSize: 11
-                    }
-                    WCheckBox {
-                        id: cfgWayland
-                        text: zh ? "以 Wayland 运行" : "Run on Wayland"
-                        checked: cfg.wayland
-                        enabled: !cfgGamescope.checked
-                        onToggled: cfg.wayland = checked
-                    }
-                    Label {
-                        text: zh ? "使用 Wine 的 Wayland 驱动。开启 Gamescope 时不生效；前置环境里已有程序在运行时，沿用它们的显示方式。"
-                                : "Use Wine's Wayland driver. Not with Gamescope."
-                        color: c.textDim
-                        font.pixelSize: 11
-                        wrapMode: Text.WordWrap
-                        Layout.fillWidth: true
-                    }
-                    RowLayout {
                         spacing: 10
-                        Layout.fillWidth: true
-                        Label { text: zh ? "环境变量" : "Environment variables"; color: c.textDim; font.pixelSize: 12 }
-                        WField {
-                            id: cfgEnv
+                        Text { text: root.zh ? "常规" : "GENERAL"; font.pixelSize: 11; font.letterSpacing: 0.8; color: c.faint }
+                        GridLayout {
+                            columns: 2
+                            columnSpacing: 12
+                            rowSpacing: 10
                             Layout.fillWidth: true
-                            text: cfg.envVars
-                            onTextEdited: cfg.envVars = text
+                            Text { text: root.zh ? "程序" : "Program"; color: c.dim; font.pixelSize: 12; Layout.preferredWidth: 74 }
+                            RowLayout {
+                                spacing: 6
+                                Layout.fillWidth: true
+                                WField { id: cfgExe; Layout.fillWidth: true; text: cfg.exe; onTextEdited: cfg.exe = text }
+                                WButton { text: root.zh ? "选择" : "Browse"; onClicked: exeDialog.open() }
+                            }
+                            Text { text: root.zh ? "显示名称" : "Name"; color: c.dim; font.pixelSize: 12 }
+                            WField {
+                                Layout.fillWidth: true
+                                text: cfg.name
+                                placeholderText: root.zh ? "留空则用程序名" : "Defaults to file name"
+                                onTextEdited: cfg.name = text
+                            }
+                            Text { text: root.zh ? "前置环境" : "Prefix"; color: c.dim; font.pixelSize: 12 }
+                            RowLayout {
+                                spacing: 6
+                                Layout.fillWidth: true
+                                WField { id: cfgPrefix; Layout.fillWidth: true; text: cfg.prefix; onTextEdited: cfg.prefix = text }
+                                WButton { text: root.zh ? "选择" : "Browse"; onClicked: prefixDialog.open() }
+                            }
+                            Text { text: root.zh ? "运行器" : "Runner"; color: c.dim; font.pixelSize: 12 }
+                            WComboBox {
+                                id: cfgRunner
+                                Layout.fillWidth: true
+                                model: root.runnersModel
+                                textRole: "label"
+                                onEditTextChanged: cfg.runner = editText
+                                onActivated: cfg.runner = editText
+                            }
+                            Text { text: root.zh ? "启动参数" : "Arguments"; color: c.dim; font.pixelSize: 12 }
+                            WField {
+                                id: cfgArgs
+                                Layout.fillWidth: true
+                                placeholderText: root.zh ? "追加在程序路径后面，如 -dx11" : "Appended to the program path"
+                                text: cfg.programArgs
+                                onTextEdited: cfg.programArgs = text
+                            }
+                        }
+                    }
+
+                    Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: c.line }
+
+                    // Gamescope
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 10
+                        Text { text: "GAMESCOPE"; font.pixelSize: 11; font.letterSpacing: 0.8; color: c.faint }
+                        Text {
+                            text: root.zh ? "遇到兼容问题、或者想要全屏缩放时，可以用 gamescope 包一层。"
+                                          : "Wrap the program in gamescope for scaling or compatibility."
+                            color: c.dim; font.pixelSize: 12; wrapMode: Text.WordWrap; Layout.fillWidth: true
+                        }
+                        RowLayout {
+                            spacing: 18
+                            WCheckBox {
+                                id: cfgGamescope
+                                text: root.zh ? "使用 Gamescope" : "Use Gamescope"
+                                checked: cfg.gamescope
+                                onToggled: cfg.gamescope = checked
+                            }
+                            WCheckBox {
+                                id: cfgFullscreen
+                                text: root.zh ? "全屏" : "Fullscreen"
+                                checked: cfg.fullscreen
+                                enabled: cfgGamescope.checked
+                                onToggled: cfg.fullscreen = checked
+                            }
+                            WCheckBox {
+                                id: cfgFsr
+                                text: "FSR"
+                                checked: cfg.fsr
+                                enabled: cfgGamescope.checked
+                                onToggled: cfg.fsr = checked
+                            }
+                        }
+                        GridLayout {
+                            columns: 2
+                            columnSpacing: 12
+                            rowSpacing: 10
+                            Layout.fillWidth: true
+                            Text { text: root.zh ? "分辨率" : "Resolution"; color: c.dim; font.pixelSize: 12; Layout.preferredWidth: 74 }
+                            WComboBox {
+                                id: cfgRes
+                                Layout.fillWidth: true
+                                model: root.resolutionsModel
+                                textRole: "value"
+                                enabled: cfgGamescope.checked
+                                onEditTextChanged: cfg.res = editText
+                                onActivated: cfg.res = editText
+                            }
+                            Text { text: root.zh ? "帧率上限" : "FPS limit"; color: c.dim; font.pixelSize: 12 }
+                            WComboBox {
+                                id: cfgFps
+                                Layout.fillWidth: true
+                                model: root.fpsModel
+                                textRole: "value"
+                                enabled: cfgGamescope.checked
+                                onEditTextChanged: cfg.fps = editText
+                                onActivated: cfg.fps = editText
+                            }
+                            Text { text: root.zh ? "额外参数" : "Extra args"; color: c.dim; font.pixelSize: 12 }
+                            WField {
+                                Layout.fillWidth: true
+                                text: cfg.args
+                                enabled: cfgGamescope.checked
+                                onTextEdited: cfg.args = text
+                            }
+                        }
+                    }
+
+                    Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: c.line }
+
+                    // 其他
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 10
+                        Text { text: root.zh ? "其他" : "OTHER"; font.pixelSize: 11; font.letterSpacing: 0.8; color: c.faint }
+                        WCheckBox {
+                            id: cfgMangohud
+                            text: "MangoHud"
+                            checked: cfg.mangohud
+                            onToggled: cfg.mangohud = checked
+                        }
+                        Text {
+                            text: root.zh ? "显示帧率与占用" : "Show FPS and usage"
+                            color: c.faint; font.pixelSize: 12; Layout.leftMargin: 27
+                        }
+                        WCheckBox {
+                            id: cfgWayland
+                            text: root.zh ? "以 Wayland 运行" : "Run on Wayland"
+                            checked: cfg.wayland
+                            enabled: !cfgGamescope.checked
+                            onToggled: cfg.wayland = checked
+                        }
+                        Text {
+                            text: root.zh ? "用 Wine 的 Wayland 驱动；开了 Gamescope 就不生效。"
+                                          : "Use Wine's Wayland driver; ignored with Gamescope."
+                            color: c.faint; font.pixelSize: 12; Layout.leftMargin: 27
+                            wrapMode: Text.WordWrap; Layout.fillWidth: true
+                        }
+                        GridLayout {
+                            columns: 2
+                            columnSpacing: 12
+                            Layout.fillWidth: true
+                            Text { text: root.zh ? "环境变量" : "Env vars"; color: c.dim; font.pixelSize: 12; Layout.preferredWidth: 74 }
+                            WField {
+                                id: cfgEnv
+                                Layout.fillWidth: true
+                                placeholderText: "KEY=VALUE KEY2=VALUE2"
+                                text: cfg.envVars
+                                onTextEdited: cfg.envVars = text
+                            }
                         }
                     }
                 }
             }
 
-            RowLayout {
-                spacing: 8
-                Layout.alignment: Qt.AlignRight
-                WButton {
-                    visible: root.configureMode
-                    text: zh ? "保存并运行" : "Save & Run"
-                    onClicked: {
-                        var entry = configDialog.collect()
-                        configDialog.close()
-                        backend.save_config(entry)
-                        backend.run_path(entry.exe, entry.prefix, entry.runner)
+            Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: c.line }
+            Item {
+                Layout.fillWidth: true
+                implicitHeight: 60
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: 20
+                    anchors.rightMargin: 20
+                    spacing: 8
+                    WButton {
+                        visible: root.configureMode
+                        text: root.zh ? "保存并运行" : "Save & Run"
+                        onClicked: {
+                            var entry = configDialog.collect()
+                            configDialog.close()
+                            backend.save_config(entry)
+                            backend.run_path(entry.exe, entry.prefix, entry.runner)
+                        }
                     }
+                    Item { Layout.fillWidth: true }
+                    WButton { text: root.zh ? "取消" : "Cancel"; onClicked: configDialog.cancelled() }
+                    WAccentButton { text: root.zh ? "保存" : "Save"; onClicked: configDialog.saved() }
                 }
-                WButton { text: zh ? "取消" : "Cancel"; onClicked: configDialog.cancelled() }
-                WAccentButton { text: zh ? "保存" : "Save"; onClicked: configDialog.saved() }
             }
         }
     }

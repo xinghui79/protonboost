@@ -71,7 +71,7 @@ pub fn exported_icon_path(prefix: &Path, app: &AppEntry, display_name: Option<&s
 }
 
 /// 生成桌面文件：Exec 走 winrun；图标用应用图标
-pub fn export_app(prefix: &Path, app: &AppEntry, wrapper: &Path, display_name: Option<&str>) -> PathBuf {
+pub fn export_app(prefix: &Path, app: &AppEntry, manager: &Path, display_name: Option<&str>) -> PathBuf {
     let link = Path::new(&app.path);
     let name = display_name
         .map(|n| n.trim().to_string())
@@ -81,10 +81,10 @@ pub fn export_app(prefix: &Path, app: &AppEntry, wrapper: &Path, display_name: O
     if let Some(parent) = target.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
+    // 桌面入口直接叫管理器按保存的配置启动，不再经过命令行
     let exec_line = format!(
-        "{} -p {} {}",
-        desktop_arg(&wrapper.to_string_lossy()),
-        desktop_arg(&prefix.to_string_lossy()),
+        "{} --run {}",
+        desktop_arg(&manager.to_string_lossy()),
         desktop_arg(&link.to_string_lossy())
     );
     let icon_path = exported_icon_path(prefix, app, Some(&name));

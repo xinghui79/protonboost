@@ -22,21 +22,16 @@ build_manager() {
 case "$MODE" in
 install)
     build_manager
-    install -Dm755 -t "$BIN_DIR" bin/winrun
     install -Dm755 target/release/winrun-manager "$BIN_DIR/winrun-manager"
-    install -d "$PREFIX/lib/winrun"
-    install -m644 -t "$PREFIX/lib/winrun" lib/*.sh
     install -Dm644 -t "$APP_DIR" share/applications/*.desktop
     install -Dm644 icons/hicolor/512x512/apps/winrun.png "$ICON_PNG/winrun.png"
     install -Dm644 icons/hicolor/scalable/apps/winrun.svg "$ICON_SVG/winrun.svg"
     command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$APP_DIR" || true
     command -v gtk-update-icon-cache >/dev/null 2>&1 && gtk-update-icon-cache -qtf "$PREFIX/share/icons/hicolor" || true
-    # 默认打开独立网络（本项目的使用方式）；--netns off 随时关
-    "$BIN_DIR/winrun" --netns on || true
-    echo "已安装到 $PREFIX — 命令: winrun / winrun-manager（Qt6 版）"
+    echo "已安装到 $PREFIX — 命令: winrun-manager"
     ;;
 uninstall)
-    rm -f "$BIN_DIR/winrun" "$BIN_DIR/winrun-configure" "$BIN_DIR/winrun-manager"
+    rm -f "$BIN_DIR/winrun-manager" "$BIN_DIR/winrun" "$BIN_DIR/winrun-configure"
     rm -f "$APP_DIR/winrun-manager.desktop" \
           "$APP_DIR/winrun-run-windows-program.desktop" \
           "$APP_DIR/winrun-windows-program-configure.desktop"

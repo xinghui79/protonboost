@@ -95,19 +95,6 @@ pub fn normalized(path: &std::path::Path) -> PathBuf {
     result
 }
 
-/// 在同级目录里找可执行文件：安装目录里的兄弟程序
-pub fn resolve_sibling(name: &str) -> PathBuf {
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            let candidate = dir.join(name);
-            if candidate.is_file() {
-                return candidate;
-            }
-        }
-    }
-    PathBuf::from(name)
-}
-
 /// 在 PATH 里找命令
 pub fn which(name: &str) -> Option<PathBuf> {
     let path = std::env::var("PATH").ok()?;

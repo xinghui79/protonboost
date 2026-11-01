@@ -9,6 +9,7 @@ cxx-qt = "0.10.0"
 cxx-qt-lib = { version = "0.10.0", features = ["qt_full"] }
 encoding_rs = "0.8.44"
 nix = { version = "0.31.3", features = ["signal", "process"] }
+serde_json = "1"
 sha2 = "0.10"
 
 [build-dependencies]

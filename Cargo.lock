@@ -701,6 +701,7 @@ dependencies = [
  "cxx-qt-lib",
  "encoding_rs",
  "nix",
+ "serde_json",
  "sha2",
 ]
 

@@ -7,7 +7,6 @@ pub mod loc;
 pub mod paths;
 pub mod prefix;
 pub mod procs;
-pub mod runners;
 pub mod scan;
 pub mod steam;
 

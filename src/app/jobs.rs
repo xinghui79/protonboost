@@ -1,8 +1,8 @@
 // 任务调度：工作线程做扫描/图标/子进程，结果经通道回主线程
 use crate::core::conf::ConfigEntry;
 use crate::core::procs;
-use crate::core::runners;
 use crate::core::scan::{self, AppEntry};
+use crate::engine::launch::Request;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver, Sender};
@@ -57,6 +57,8 @@ pub enum Job {
     Procs { req: u64, prefix: PathBuf },
     LinuxApps { req: u64 },
     Exes { prefix: PathBuf, dir: PathBuf },
+    Launch { request: Request, label: String },
+    LaunchCommand { prefix: PathBuf, argv: Vec<String>, label: String },
     UpdateCheck,
     UpdateRun,
     Icon { req: u64, app_id: String, prefix: PathBuf, path: String, kind: String, name: String },
@@ -68,6 +70,7 @@ pub enum ResultMsg {
     Procs { req: u64, items: Vec<ProcRow> },
     LinuxApps { req: u64, items: Vec<LinuxAppRow> },
     Exes { title: String, items: Vec<ExeRow> },
+    Launch { label: String, result: Result<Vec<String>, String> },
     UpdateCheck { text: String },
     UpdateRun { success: bool },
     Icon { req: u64, app_id: String, icon: String },
@@ -223,12 +226,28 @@ fn handle(job: Job, tx: &Sender<ResultMsg>) {
             });
         }
         Job::UpdateCheck => {
-            let text = runners::check_update();
+            let text = crate::engine::update::describe(&crate::engine::update::check());
             let _ = tx.send(ResultMsg::UpdateCheck { text });
         }
         Job::UpdateRun => {
-            let success = runners::update_runners();
+            let candidates = crate::engine::update::check();
+            let success = crate::engine::update::install(&candidates).is_ok();
             let _ = tx.send(ResultMsg::UpdateRun { success });
+        }
+        Job::Launch { request, label } => {
+            let result = crate::engine::launch::launch(&request, crate::core::loc::zh())
+                .map(|report| {
+                    scan::mark_app_started(&request.prefix, &request.target);
+                    report.notes
+                });
+            let _ = tx.send(ResultMsg::Launch { label, result });
+        }
+        Job::LaunchCommand { prefix, argv, label } => {
+            let result = crate::engine::launch::run_command(&prefix, &argv);
+            let _ = tx.send(ResultMsg::Launch {
+                label,
+                result: result.map(|_| Vec::new()),
+            });
         }
         Job::Icon { req, app_id, prefix, path, kind, name } => {
             let app = AppEntry {

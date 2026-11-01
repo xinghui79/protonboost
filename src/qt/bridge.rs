@@ -2,9 +2,10 @@
 // 数据以 QVariant 列表整批下发；扫描/图标在 worker 线程，poll() 负责回收
 use crate::core::conf::ConfigEntry;
 use crate::core::icons;
-use crate::core::paths::{expand_path, resolve_sibling};
+use crate::core::paths::expand_path;
 use crate::core::procs;
-use crate::core::runners;
+use crate::engine::launch::{self as engine_launch, Request as LaunchRequest};
+use crate::engine::runners as engine_runners;
 use crate::core::scan::{self, AppEntry};
 use crate::jobs::{self, Event, Job};
 use cxx_qt::CxxQtType;
@@ -253,8 +254,9 @@ fn spawn_detached(command: &mut std::process::Command) -> Result<(), String> {
         .map_err(|err| err.to_string())
 }
 
-fn wrapper() -> PathBuf {
-    resolve_sibling("winrun")
+/// 管理器自己的可执行文件：导出的桌面入口指向它
+fn manager_path() -> PathBuf {
+    std::env::current_exe().unwrap_or_else(|_| PathBuf::from("winrun-manager"))
 }
 
 /// 简易 shlex：支持单双引号的命令拆分
@@ -450,11 +452,31 @@ impl ffi::Backend {
                     self.as_mut().set_exes_items(list);
                     push_event(self.as_mut(), "exes");
                 }
+                jobs::ResultMsg::Launch { label, result } => {
+                    let zh = crate::core::loc::zh();
+                    match result {
+                        Ok(notes) => {
+                            let mut message = if zh { format!("运行：{label}") } else { format!("Run: {label}") };
+                            if let Some(note) = notes.first() {
+                                message.push_str(" · ");
+                                message.push_str(note);
+                            }
+                            self.as_mut().set_status(QString::from(message));
+                            let prefix = self.as_mut().rust().current_prefix.clone();
+                            self.as_mut().refresh_apps_now(&prefix);
+                            jobs::refresh_after(1500);
+                        }
+                        Err(err) => {
+                            let message = if zh { format!("启动失败：{err}") } else { format!("Launch failed: {err}") };
+                            self.as_mut().set_status(QString::from(message));
+                        }
+                    }
+                }
                 jobs::ResultMsg::UpdateCheck { text } => {
                     let available = !text.is_empty();
                     self.as_mut().set_update_available(available);
                     if available {
-                        self.as_mut().set_update_details(QString::from(runners::describe_runner_updates(&text)));
+                        self.as_mut().set_update_details(QString::from(text));
                     }
                 }
                 jobs::ResultMsg::UpdateRun { success } => {
@@ -596,54 +618,49 @@ impl ffi::Backend {
 
     // ── 启动与进程 ──────────────────────────────────────────
     pub fn run_path(mut self: Pin<&mut Self>, path: &QString, prefix: &QString, runner: &QString) {
-        let path_str = path.to_string();
-        if path_str.is_empty() {
+        let target = expand_path(&path.to_string());
+        if target.as_os_str().is_empty() {
             return;
         }
-        let prefix_str = prefix.to_string();
-        let mut command = std::process::Command::new(wrapper());
-        command.arg("-p").arg(&prefix_str);
-        let runner_str = runner.to_string();
-        let runner_path = PathBuf::from(&runner_str);
-        if runner_path.is_file() {
-            command.arg("--runner").arg(&runner_str);
+        let prefix_path = expand_path(&prefix.to_string());
+        let key = target.to_string_lossy().into_owned();
+        let entry = ConfigEntry::read(&key).unwrap_or_else(|| {
+            let mut entry = crate::core::conf::default_entry();
+            entry.exe = key.clone();
+            entry.prefix = prefix_path.to_string_lossy().into_owned();
+            entry
+        });
+        let runner_value = if runner.to_string().is_empty() { entry.runner.clone() } else { runner.to_string() };
+        let label = target
+            .file_stem()
+            .and_then(|name| name.to_str())
+            .unwrap_or(&key)
+            .to_string();
+
+        let request = LaunchRequest {
+            prefix: prefix_path,
+            target,
+            args: engine_launch::split_args(&entry.program_args),
+            runner: engine_runners::resolve(&runner_value),
+            gamescope: entry.gamescope,
+            gamescope_fullscreen: entry.gamescope_fullscreen,
+            gamescope_res: entry.gamescope_res.clone(),
+            gamescope_fps: entry.gamescope_fps.clone(),
+            gamescope_fsr: entry.gamescope_fsr,
+            gamescope_extra: entry.gamescope_args.clone(),
+            mangohud: entry.mangohud,
+            wayland: entry.wayland,
+            env: engine_launch::parse_env_vars(&entry.env_vars),
+            steam_appid: entry.steam_appid.clone(),
+        };
+
+        let zh = crate::core::loc::zh();
+        self.as_mut().set_status(QString::from(if zh {
+            format!("正在启动 {label}…")
         } else {
-            let lower = runner_str.to_lowercase();
-            for (needle, id) in [
-                ("proton-ge", "ge"),
-                ("ge-proton", "ge"),
-                ("dw-proton", "dw"),
-                ("dwproton", "dw"),
-                ("we-proton", "we"),
-                ("weproton", "we"),
-            ] {
-                if lower.contains(needle) {
-                    command.arg("--runner").arg(id);
-                    break;
-                }
-            }
-        }
-        command.arg(&path_str);
-        match spawn_detached(&mut command) {
-            Ok(()) => {
-                scan::mark_app_started(&expand_path(&prefix_str), std::path::Path::new(&path_str));
-                let zh = crate::core::loc::zh();
-                self.as_mut().set_status(QString::from(format!(
-                    "{}: {path_str}",
-                    if zh { "运行" } else { "Run" }
-                )));
-                let prefix_clone = prefix_str.clone();
-                self.as_mut().refresh_apps_now(&prefix_clone);
-                jobs::refresh_after(800);
-            }
-            Err(err) => {
-                let zh = crate::core::loc::zh();
-                self.as_mut().set_status(QString::from(format!(
-                    "{}: {err}",
-                    if zh { "启动失败" } else { "Launch failed" }
-                )));
-            }
-        }
+            format!("Starting {label}…")
+        }));
+        jobs::send(Job::Launch { request, label });
     }
 
     pub fn run_steam_game(mut self: Pin<&mut Self>, appid: &QString, path: &QString, prefix: &QString) {
@@ -744,34 +761,12 @@ impl ffi::Backend {
         self.launch_argv(prefix, &argv, &name.to_string());
     }
 
-    fn launch_argv(mut self: Pin<&mut Self>, prefix: &QString, argv: &[String], display: &str) {
-        let prefix_str = prefix.to_string();
-        let prefix_path = expand_path(&prefix_str);
-        let mut command = std::process::Command::new(wrapper());
-        command.arg("-p").arg(&prefix_str).args(argv);
-        let net = if crate::core::prefix::netns_enabled(&prefix_path) {
-            if crate::core::loc::zh() { "独立网络" } else { "independent network" }
-        } else {
-            if crate::core::loc::zh() { "宿主网络" } else { "host network" }
-        };
-        match spawn_detached(&mut command) {
-            Ok(()) => {
-                let message = if crate::core::loc::zh() {
-                    format!("已启动 {display}（{net}）")
-                } else {
-                    format!("Launched {display} ({net})")
-                };
-                self.as_mut().set_status(QString::from(message));
-            }
-            Err(err) => {
-                let message = if crate::core::loc::zh() {
-                    format!("启动失败：{err}")
-                } else {
-                    format!("Launch failed: {err}")
-                };
-                self.as_mut().set_status(QString::from(message));
-            }
-        }
+    fn launch_argv(self: Pin<&mut Self>, prefix: &QString, argv: &[String], display: &str) {
+        jobs::send(Job::LaunchCommand {
+            prefix: expand_path(&prefix.to_string()),
+            argv: argv.to_vec(),
+            label: display.to_string(),
+        });
     }
 
     // ── 文件与配置 ──────────────────────────────────────────
@@ -803,13 +798,13 @@ impl ffi::Backend {
     }
 
     fn emit_config(mut self: Pin<&mut Self>, entry: ConfigEntry) {
-        let runners_list = runners::load_runners();
+        let runners_list = engine_runners::discover();
         let runner_list = build_list(
             runners_list
                 .iter()
                 .map(|runner| {
                     vec![
-                        ("label", qvar_str(&runners::runner_label(runner))),
+                        ("label", qvar_str(&engine_runners::label(runner))),
                         ("path", qvar_str(&runner.path)),
                     ]
                 })
@@ -836,8 +831,8 @@ impl ffi::Backend {
         let runner_label = runners_list
             .iter()
             .find(|runner| runner.path == entry.runner)
-            .map(runners::runner_label)
-            .unwrap_or_else(|| runners::label_from_path(&entry.runner));
+            .map(engine_runners::label)
+            .unwrap_or_else(|| engine_runners::label_from_path(&entry.runner));
         put(&mut map, "runner", &runner_label);
         put(&mut map, "runnerPath", &entry.runner);
         put(&mut map, "programArgs", &entry.program_args);
@@ -984,7 +979,7 @@ impl ffi::Backend {
         else {
             return;
         };
-        let target = crate::core::export::export_app(&prefix_path, &app, &wrapper(), None);
+        let target = crate::core::export::export_app(&prefix_path, &app, &manager_path(), None);
         crate::core::export::maybe_update_desktop_database();
         let zh = crate::core::loc::zh();
         self.as_mut().set_status(QString::from(format!(
@@ -1121,15 +1116,22 @@ impl ffi::Backend {
 
     pub fn configure_exe(mut self: Pin<&mut Self>, exe: &QString) {
         let exe_str = exe.to_string();
-        let entry = ConfigEntry::read(&exe_str).unwrap_or_else(|| {
-            let exe_path = expand_path(&exe_str);
-            let prefix_path = expand_path(
-                &std::env::var("WINRUN_PREFIX").unwrap_or_else(|_| {
-                    crate::core::paths::home().join(".proton").to_string_lossy().into_owned()
-                }),
-            );
+        let prefix_path = expand_path(
+            &std::env::var("WINRUN_PREFIX").unwrap_or_else(|_| {
+                crate::core::paths::home().join(".proton").to_string_lossy().into_owned()
+            }),
+        );
+        // 桌面入口给的是 Linux 路径；也接受 C:\... 这样的 Windows 路径
+        let looks_windows = exe_str.contains('\\') || exe_str.chars().nth(1) == Some(':');
+        let exe_path = if looks_windows {
+            scan::windows_path_to_linux(&prefix_path, &exe_str).unwrap_or_else(|| expand_path(&exe_str))
+        } else {
+            expand_path(&exe_str)
+        };
+        let key = exe_path.to_string_lossy().into_owned();
+        let entry = ConfigEntry::read(&key).unwrap_or_else(|| {
             let mut entry = crate::core::conf::default_entry();
-            entry.exe = exe_path.to_string_lossy().into_owned();
+            entry.exe = key.clone();
             entry.prefix = prefix_path.to_string_lossy().into_owned();
             entry.runner = default_runner_for(&prefix_path);
             entry.name = scan::inferred_exe_name(&exe_path, Some(&prefix_path));
@@ -1155,7 +1157,7 @@ fn default_runner_for(prefix: &std::path::Path) -> String {
     if !from_prefix.is_empty() {
         return from_prefix;
     }
-    runners::preferred_runner_path(&runners::load_runners())
+    engine_runners::for_prefix(prefix).map(|runner| runner.path).unwrap_or_default()
 }
 
 /// 界面上的运行器文案 → 运行器路径；识别不出时返回 None
@@ -1167,8 +1169,8 @@ fn resolve_runner(value: &str) -> Option<String> {
     if value.contains('/') {
         return Some(value.to_string());
     }
-    runners::load_runners()
+    engine_runners::discover()
         .iter()
-        .find(|runner| runners::runner_label(runner) == value)
+        .find(|runner| engine_runners::label(runner) == value)
         .map(|runner| runner.path.clone())
 }
