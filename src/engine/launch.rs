@@ -348,9 +348,46 @@ pub fn launch(request: &Request, zh: bool) -> Result<Report, String> {
 
 /// 在前缀的会话里跑一条 Linux 命令（Linux 程序页用）：
 /// 前缀开了独立网络时进同一个命名空间，否则就在宿主网络里跑。
+/// Steam 的 Linux 启动脚本硬性拒绝 root。提前说清楚，别让用户对着
+/// `bin_steam.sh: Error: Cannot run as root user` 猜半天。
+fn root_steam_hint(argv: &[String]) -> Option<String> {
+    if current_uid() != 0 {
+        return None;
+    }
+    let first = argv.first()?;
+    let name = std::path::Path::new(first)
+        .file_name()?
+        .to_string_lossy()
+        .to_lowercase();
+    if !(name.contains("steam") && name.ends_with(".sh")) {
+        return None;
+    }
+    Some(if crate::core::loc::zh() {
+        "Steam 客户端拒绝以 root 运行（Cannot run as root user）。\n\n\
+两个要求是冲突的：独立网络需要 root 才能建命名空间，而 Steam 不接受 root。\n\
+建议关掉这个前缀的独立网络（侧栏里前缀右边那个小开关），让加速器用路由模式接管\
+系统流量，Steam 以普通用户正常运行；这样社区加速一样有效。"
+            .into()
+    } else {
+        "Steam refuses to run as root. Isolated networks need root, Steam does not \
+accept it. Try turning the prefix's isolated network off and let the accelerator \
+use its routing mode instead."
+            .into()
+    })
+}
+
+/// 当前进程的 uid（读 /proc/self，容器里也能用）
+fn current_uid() -> u32 {
+    use std::os::unix::fs::MetadataExt;
+    std::fs::metadata("/proc/self").map(|meta| meta.uid()).unwrap_or(0)
+}
+
 pub fn run_command(prefix: &Path, argv: &[String]) -> Result<(), String> {
     if argv.is_empty() {
         return Err("没有要运行的程序".into());
+    }
+    if let Some(hint) = root_steam_hint(argv) {
+        return Err(hint);
     }
     let zh = crate::core::loc::zh();
     let session = session::prepare(prefix, zh).map_err(|err| err.message(zh))?;
