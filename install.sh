@@ -22,6 +22,9 @@ build_manager() {
 case "$MODE" in
 install)
     build_manager
+    # 清掉上一版（Bash CLI）留下的文件
+    rm -f "$BIN_DIR/winrun" "$BIN_DIR/winrun-configure"
+    rm -rf "$PREFIX/lib/winrun"
     install -Dm755 target/release/winrun-manager "$BIN_DIR/winrun-manager"
     install -Dm644 -t "$APP_DIR" share/applications/*.desktop
     install -Dm644 icons/hicolor/512x512/apps/winrun.png "$ICON_PNG/winrun.png"
