@@ -1289,6 +1289,7 @@ def install_css() -> None:
 @define-color accent_color #6366f1;
 @define-color accent_bg_color #6366f1;
 @define-color accent_fg_color #ffffff;
+@define-color accent_hover #818cf1;
 @define-color theme_selected_bg_color #6366f1;
 @define-color theme_selected_fg_color #ffffff;
 :root {
@@ -1311,6 +1312,11 @@ def install_css() -> None:
   border-right: 1px solid alpha(@theme_fg_color, 0.07);
 }
 .winrun-title { font-weight: 700; }
+.page-header .heading {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
 .sidebar-button {
   padding: 9px 12px;
   border-radius: 10px;
@@ -1443,6 +1449,27 @@ combobox:focus button {
   padding: 5px 12px;
   min-height: 30px;
   min-width: 0;
+  background-color: transparent;
+  border-color: transparent;
+  color: alpha(@theme_fg_color, 0.85);
+}
+.compact-button.destructive-action {
+  color: rgb(229, 83, 75);
+}
+.run-button {
+  background-color: @accent_bg_color;
+  color: @accent_fg_color;
+  font-weight: 600;
+  min-width: 64px;
+  border-color: transparent;
+}
+.run-button:hover {
+  background-color: @accent_hover;
+  color: @accent_fg_color;
+  border-color: transparent;
+}
+.run-button:active {
+  background-color: shade(@accent_bg_color, 0.85);
 }
 .icon-button {
   padding: 0;
@@ -1456,8 +1483,12 @@ combobox:focus button {
   margin: 0;
 }
 .compact-button:hover {
-  background-color: alpha(@theme_fg_color, 0.12);
-  border-color: alpha(@theme_fg_color, 0.22);
+  background-color: alpha(@theme_fg_color, 0.08);
+  border-color: transparent;
+  color: @theme_fg_color;
+}
+.compact-button.destructive-action:hover {
+  color: rgb(255, 107, 99);
 }
 menubutton.compact-button > button:hover {
   background-color: alpha(@theme_fg_color, 0.12);
@@ -2331,7 +2362,7 @@ class WinRunTray:
 
     def cleanup(self) -> None:
         if self._own_id:
-            GLib.bus_unown_name(self._own_id)
+            Gio.bus_unown_name(self._own_id)
             self._own_id = 0
 
 
@@ -2436,6 +2467,7 @@ class ManagerApp(Gtk.Application):
             self.set_status("已隐藏到托盘" if ZH else "Hidden to tray")
         else:
             self.window.present()
+            self.refresh_all()
 
     def do_shutdown(self):
         if self.refresh_source_id:
@@ -2526,7 +2558,10 @@ class ManagerApp(Gtk.Application):
         self.stack.add_named(self.linux_page(), "linux")
         self.stack.add_named(self.install_dirs_page(), "install_dirs")
         self.stack.add_named(self.process_page(), "processes")
-        self.set_page(os.environ.get("WINRUN_PAGE", "apps"))
+        initial = (os.environ.get("WINRUN_PAGE") or "apps").split("=")[-1]
+        if initial not in ("apps", "linux", "processes", "install_dirs"):
+            initial = "apps"
+        self.set_page(initial)
         return self.stack
 
     def make_page(self, name: str, title: str, description: str, search_hint: str) -> tuple[Gtk.Box, Gtk.Box, Gtk.ListBox]:
@@ -2536,6 +2571,7 @@ class ManagerApp(Gtk.Application):
         page.set_margin_start(16)
         page.set_margin_end(16)
         header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        header.add_css_class("page-header")
         if title or description:
             header.append(section(title, description))
             spacer = Gtk.Box(hexpand=True)
@@ -2827,6 +2863,8 @@ class ManagerApp(Gtk.Application):
 
     def refresh_all(self) -> None:
         if self.popover_open:
+            return
+        if self.window is not None and not self.window.get_visible():
             return
         visible = self.stack.get_visible_child_name() if self.stack else "apps"
         if visible == "processes":
