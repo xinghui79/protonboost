@@ -220,7 +220,19 @@ fn build_command(request: &Request, runner: &Runner, session: &session::Session)
         env.extend(compat);
         argv.extend(runtime::entry_prefix(Path::new(&runner.path), verb));
         argv.push(runner.path.clone());
-        argv.push(request.target.to_string_lossy().into_owned());
+        // Proton 自己也要一个动词：`proton waitforexitandrun <exe>`。
+        // --verb= 是给 pressure-vessel 的，不能顶替它，缺了 Proton 会报 "Need a verb."
+        argv.push(verb.to_string());
+        // 快捷方式要换成它指向的 exe，Proton 不认 .lnk
+        let (target, shortcut_args) = match crate::core::scan::resolve_shortcut(
+            &request.prefix,
+            &request.target,
+        ) {
+            Some((exe, args)) if exe.exists() => (exe, args),
+            _ => (request.target.clone(), Vec::new()),
+        };
+        argv.push(target.to_string_lossy().into_owned());
+        argv.extend(shortcut_args);
         argv.extend(request.args.iter().cloned());
     } else {
         let pfx = request.prefix.join("pfx");

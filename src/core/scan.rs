@@ -169,6 +169,59 @@ pub fn windows_display_path(prefix: &Path, path: &Path) -> String {
 
 
 // ── Windows 路径 → Linux 路径 ────────────────────────────────
+/// 快捷方式 → 真正要执行的 exe（Linux 路径）与它自带的参数。
+///
+/// Proton 不认识 .lnk（会当成 unix 路径丢给 umu.exe），启动前必须换成它指向的程序。
+pub fn resolve_shortcut(prefix: &Path, path: &Path) -> Option<(PathBuf, Vec<String>)> {
+    let extension = path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_lowercase());
+    if extension.as_deref() != Some("lnk") {
+        return None;
+    }
+    let info = crate::core::lnk::parse_lnk(path);
+    if info.target.is_empty() {
+        return None;
+    }
+    let target = windows_path_to_linux(prefix, &info.target)?;
+    Some((target, split_shortcut_args(&info.args)))
+}
+
+/// 快捷方式里的参数分词：支持单双引号
+fn split_shortcut_args(text: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut current = String::new();
+    let mut quote: Option<char> = None;
+    let mut has_token = false;
+    for ch in text.chars() {
+        match ch {
+            '"' | '\'' => {
+                has_token = true;
+                if quote == Some(ch) {
+                    quote = None;
+                } else if quote.is_none() {
+                    quote = Some(ch);
+                }
+            }
+            c if c.is_whitespace() && quote.is_none() => {
+                if has_token {
+                    out.push(std::mem::take(&mut current));
+                    has_token = false;
+                }
+            }
+            c => {
+                has_token = true;
+                current.push(c);
+            }
+        }
+    }
+    if has_token {
+        out.push(current);
+    }
+    out
+}
+
 pub fn windows_path_to_linux(prefix: &Path, value: &str) -> Option<PathBuf> {
     let value = value.trim().trim_matches('"');
     if value.is_empty() {
