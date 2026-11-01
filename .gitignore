@@ -1,6 +1,6 @@
 /target/
 /build/
-__pycache__/
 dist/
-__pycache__/
-*.pyc
+
+# 编辑器/IDE 的本地配置（路径是本机的，不入库）
+.qmlls.ini
