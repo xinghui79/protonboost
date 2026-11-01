@@ -751,7 +751,12 @@ ApplicationWindow {
                             ToolTip.visible: modelData.isSteam && hovered
                             ToolTip.delay: 400
                             ToolTip.text: zh ? "通过 Steam 启动" : "Start through Steam"
-                            onClicked: backend.run_path(modelData.path, root.appsPrefix, modelData.runner)
+                            onClicked: {
+                                if (modelData.isSteam && modelData.steamAppid)
+                                    backend.run_steam_game(modelData.steamAppid, modelData.path, root.appsPrefix)
+                                else
+                                    backend.run_path(modelData.path, root.appsPrefix, modelData.runner)
+                            }
                         }
                         WButton {
                             visible: modelData.canConfig

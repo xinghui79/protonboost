@@ -11,9 +11,6 @@ ICON_PNG="$PREFIX/share/icons/hicolor/512x512/apps"
 ICON_SVG="$PREFIX/share/icons/hicolor/scalable/apps"
 
 build_manager() {
-    if [[ -x target/release/winrun-manager ]]; then
-        return
-    fi
     command -v cargo >/dev/null 2>&1 || {
         echo "需要 cargo 构建 winrun-manager（或先手动 cargo build --release）" >&2
         exit 1

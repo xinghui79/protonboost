@@ -331,6 +331,7 @@ impl ffi::Backend {
                                     ("hasLog", qvar_bool(row.has_log)),
                                     ("canConfig", qvar_bool(row.can_config)),
                                     ("isSteam", qvar_bool(row.is_steam)),
+                                    ("steamAppid", qvar_str(&row.steam_appid)),
                                     ("kind", qvar_str(&row.kind)),
                                     ("path", qvar_str(&row.path)),
                                     ("runner", qvar_str(&row.runner)),
