@@ -17,6 +17,22 @@ use std::path::PathBuf;
 // QML 内容指纹（见 build.rs）：只改 QML 时靠它触发重编译与重链接
 const QML_STAMP: &str = env!("WINRUN_QML_STAMP");
 
+fn print_usage() {
+    println!(
+        "winrun-manager {} —— 在 Linux 上用 Proton / Wine 跑 Windows 程序
+
+用法:
+  winrun-manager                    打开管理器
+  winrun-manager --run <exe>        按保存的配置启动（桌面入口用）
+  winrun-manager --configure <exe>  只打开某个程序的运行设置
+  winrun-manager --exec <命令...>   在前缀会话里跑一条命令（Steam 启动选项）
+  winrun-manager --list-runner      列出找到的 Proton / Wine
+  winrun-manager --dump-scan [前缀] 打印前缀扫描结果，排查界面为什么是空的
+  winrun-manager --version          版本",
+        env!("CARGO_PKG_VERSION")
+    );
+}
+
 fn main() {
     let _qml_stamp = QML_STAMP;
     // 管道被提前关闭时（如 `--list-runner | head`）安静退出，不要 panic
@@ -31,6 +47,16 @@ fn main() {
     }
 
     // 运行模式（导出的桌面入口用）：--run <exe>
+    // 版本与用法：脚本、打包、issue 里都用得上，别为了问一句版本把 GUI 拉起来
+    if args.iter().any(|arg| arg == "--version" || arg == "-V") {
+        println!("winrun-manager {}", env!("CARGO_PKG_VERSION"));
+        return;
+    }
+    if args.iter().any(|arg| arg == "--help" || arg == "-h") {
+        print_usage();
+        return;
+    }
+
     if let Some(pos) = args.iter().position(|arg| arg == "--run") {
         let exe = args.get(pos + 1).cloned().unwrap_or_default();
         run_saved(&exe);

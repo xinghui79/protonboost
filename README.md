@@ -33,8 +33,23 @@
 git clone <repo> && cd winrun
 ./install.sh                 # 构建 release 并安装到 ~/.local
 ./install.sh install ~/.opt  # 自定义 PREFIX
-./install.sh uninstall       # 卸载
+./install.sh uninstall       # 按安装记录卸载
+./install.sh help            # 用法
+
+# 已经编过 release、只想重新装一遍文件
+WINRUN_NO_BUILD=1 ./install.sh
 ```
+
+构建需要 Qt 6 的开发文件（脚本会先检查，缺了会给出各发行版的包名）；
+只安装现成二进制则不需要。
+
+安装脚本会记下装了哪些文件（`$PREFIX/share/winrun/installed-files.txt`），
+卸载照着删，不会漏也不会顺手删掉别的东西。
+
+**为什么不发 Flatpak / AppImage**：这个工具要调用宿主上的 Proton（pressure-vessel
+在沙盒里起不来），还要读写 Steam 的 `compatibilitytools.d` 和你的前缀目录。沙盒化之后
+要么把这些权限全开（等于没沙盒），要么根本跑不起来。所以走源码 + 安装脚本这条路，
+想系统级安装就把 `PREFIX` 指到 `/usr/local`（用 `sudo`）。
 
 ## 使用
 
