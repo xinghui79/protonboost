@@ -47,6 +47,16 @@ TEXT = {
     "open_prefix": "打开前置环境目录" if ZH else "Open Prefix Folder",
     "cancel": "取消" if ZH else "Cancel",
     "apps": "应用" if ZH else "Apps",
+    "linux_apps": "Linux 程序" if ZH else "Linux Apps",
+    "linux_desc": "在当前前置环境里启动 Linux 原生程序；前置环境开了独立网络时会与加速器同网络" if ZH else "Launch native Linux apps in the selected prefix; joins the independent network when enabled",
+    "search_linux": "搜索 Linux 程序 (Ctrl+F)" if ZH else "Search Linux apps (Ctrl+F)",
+    "no_linux_apps": "没有可启动的 Linux 程序" if ZH else "No launchable Linux apps",
+    "custom_cmd_hint": "自定义命令，如 steam" if ZH else "Custom command, e.g. steam",
+    "launched": "已启动 {name}（{net}）" if ZH else "Launched {name} ({net})",
+    "launch_failed": "启动失败：{err}" if ZH else "Launch failed: {err}",
+    "bad_cmd": "无法解析命令" if ZH else "Cannot parse command",
+    "net_on": "独立网络" if ZH else "independent network",
+    "net_off": "宿主网络" if ZH else "host network",
     "library": "仓库" if ZH else "Repository",
     "install_dirs": "目录" if ZH else "Folders",
     "install_dirs_desc": "可能包含 Windows 程序的安装目录。选择目录中的 exe 后会创建应用配置。" if ZH else "Install folders that may contain Windows apps. Pick an exe to create an app config.",
@@ -1314,7 +1324,10 @@ def install_css() -> None:
   color: @theme_fg_color;
 }
 .sidebar-button-active {
-  background-color: alpha(@accent_color, 0.15);
+  background-color: alpha(@accent_color, 0.26);
+  color: @accent_color;
+}
+.sidebar-button-active image {
   color: @accent_color;
 }
 
@@ -1435,8 +1448,6 @@ combobox:focus button {
   padding: 0;
   min-height: 34px;
   min-width: 34px;
-  max-height: 34px;
-  max-width: 34px;
 }
 .icon-button label {
   min-height: 16px;
@@ -2123,12 +2134,15 @@ class ManagerApp(Gtk.Application):
         self.apps_prefix_combo = None
         self.install_dirs_prefix_combo = None
         self.process_prefix_combo = None
+        self.linux_prefix_combo = None
         self.process_prefix_display_paths: dict[str, Path] = {}
         self.process_path_label = None
         self.prefix_entry = None
         self.stack = None
         self.nav_buttons = {}
         self.apps_list = None
+        self.linux_list = None
+        self.linux_signature = None
         self.install_dirs_list = None
         self.process_list = None
         self.apps_signature = None
@@ -2147,10 +2161,16 @@ class ManagerApp(Gtk.Application):
         self.icon_loader = IconLoader()
 
     def do_activate(self):
+        if self.window is not None:
+            self.window.present()
+            return
         sync_color_scheme()
         install_css()
         self.window = Gtk.ApplicationWindow(application=self, title=TEXT["title"])
         Gtk.Window.set_default_icon_name("winrun")
+        icons_dir = Path(__file__).resolve().parent.parent / "icons"
+        if (icons_dir / "hicolor").is_dir():
+            Gtk.IconTheme.get_for_display(self.window.get_display()).add_search_path(str(icons_dir))
         self.window.set_default_size(1080, 720)
 
         header = Gtk.HeaderBar()
@@ -2208,9 +2228,11 @@ class ManagerApp(Gtk.Application):
         sidebar.set_margin_start(10)
         sidebar.set_valign(Gtk.Align.START)
         icons = {"apps": "view-grid-symbolic",
-                 "install_dirs": "folder-symbolic",
-                 "processes": "utilities-system-monitor-symbolic"}
-        for name, label in (("apps", TEXT["apps"]), ("install_dirs", TEXT["install_dirs"]), ("processes", TEXT["processes"])):
+                 "linux": "applications-system-symbolic",
+                 "processes": "utilities-system-monitor-symbolic",
+                 "install_dirs": "folder-symbolic"}
+        for name, label in (("apps", TEXT["apps"]), ("linux", TEXT["linux_apps"]),
+                            ("processes", TEXT["processes"]), ("install_dirs", TEXT["install_dirs"])):
             row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
             icon = Gtk.Image.new_from_gicon(Gio.ThemedIcon.new(icons[name]))
             icon.set_pixel_size(16)
@@ -2270,9 +2292,10 @@ class ManagerApp(Gtk.Application):
     def build_stack(self) -> Gtk.Stack:
         self.stack = Gtk.Stack(hexpand=True, vexpand=True)
         self.stack.add_named(self.apps_page(), "apps")
+        self.stack.add_named(self.linux_page(), "linux")
         self.stack.add_named(self.install_dirs_page(), "install_dirs")
         self.stack.add_named(self.process_page(), "processes")
-        self.set_page("apps")
+        self.set_page(os.environ.get("WINRUN_PAGE", "apps"))
         return self.stack
 
     def make_page(self, name: str, title: str, description: str, search_hint: str) -> tuple[Gtk.Box, Gtk.Box, Gtk.ListBox]:
@@ -2329,6 +2352,106 @@ class ManagerApp(Gtk.Application):
         kill_all.connect("clicked", self.on_kill_all_processes)
         actions.append(kill_all)
         return page
+
+    def linux_page(self) -> Gtk.Widget:
+        page, actions, self.linux_list = self.make_page("linux", TEXT["linux_apps"], TEXT["linux_desc"], TEXT["search_linux"])
+        page.insert_child_after(self.prefix_selector("linux"), page.get_first_child())
+        entry = Gtk.Entry()
+        entry.set_placeholder_text(TEXT["custom_cmd_hint"])
+        entry.set_size_request(260, -1)
+        entry.connect("activate", lambda _e: self.on_launch_custom(entry))
+        launch = self.compact_button(TEXT["run"], "run-button")
+        launch.connect("clicked", lambda _b: self.on_launch_custom(entry))
+        actions.append(entry)
+        actions.append(launch)
+        return page
+
+    def scan_linux_desktops(self) -> list[dict[str, str]]:
+        import configparser
+        bases = [Path("/usr/local/share/applications"),
+                 Path("/usr/share/applications"),
+                 Path.home() / ".local/share/applications"]
+        seen: dict[str, dict[str, str]] = {}
+        for base in bases:
+            if not base.is_dir():
+                continue
+            for f in sorted(base.glob("*.desktop")):
+                cp = configparser.RawConfigParser(strict=False, interpolation=None)
+                try:
+                    cp.read(f, encoding="utf-8")
+                except Exception:
+                    continue
+                if not cp.has_section("Desktop Entry"):
+                    continue
+                sec = cp["Desktop Entry"]
+                if sec.get("Type", "Application") != "Application":
+                    continue
+                if sec.getboolean("NoDisplay", fallback=False) or sec.getboolean("Hidden", fallback=False):
+                    continue
+                if sec.getboolean("Terminal", fallback=False):
+                    continue
+                exec_line = sec.get("Exec", "").strip()
+                if not exec_line or "winrun" in exec_line or "proton-wrapper" in exec_line:
+                    continue
+                seen[f.stem] = {"id": f.stem, "path": str(f), "exec": exec_line,
+                                "name": sec.get("Name[zh_CN]", sec.get("Name", f.stem)),
+                                "icon": sec.get("Icon", "")}
+        return sorted(seen.values(), key=lambda d: d["name"].casefold())
+
+    def fill_linux_apps(self, apps: list[dict[str, str]]) -> None:
+        if not apps:
+            self.linux_list.append(self.empty_row(TEXT["no_linux_apps"]))
+            return
+        for app in apps:
+            row = SearchRow(app["name"], app["id"], app["path"], key=app["id"])
+            box = self.row_box()
+            box.append(self.icon_widget(app["icon"] or "application-x-executable-symbolic"))
+            box.append(self.text_column(app["name"], app["path"]))
+            run_button = self.compact_button(TEXT["run"], "run-button")
+            run_button.connect("clicked", lambda _b, item=app: self.on_launch_linux_desktop(item))
+            box.append(run_button)
+            row.set_child(box)
+            self.linux_list.append(row)
+
+    def refresh_linux_apps(self) -> None:
+        if not self.linux_list:
+            return
+        apps = self.scan_linux_desktops()
+        signature = repr([(a["id"], a["name"]) for a in apps])
+        if signature == self.linux_signature:
+            return
+        self.linux_signature = signature
+        view = self.save_list_view(self.linux_list)
+        self.clear_list(self.linux_list)
+        self.fill_linux_apps(apps)
+        self.restore_list_view(self.linux_list, view)
+
+    def on_launch_linux_desktop(self, app: dict[str, str]) -> None:
+        self.launch_linux(["gio", "launch", app["path"]], app["name"])
+
+    def on_launch_custom(self, entry: Gtk.Entry) -> None:
+        import shlex
+        cmd = entry.get_text().strip()
+        if not cmd:
+            return
+        try:
+            argv = shlex.split(cmd)
+        except ValueError:
+            self.set_status(TEXT["bad_cmd"])
+            return
+        entry.set_text("")
+        self.launch_linux(argv, cmd)
+
+    def launch_linux(self, argv: list[str], display: str) -> None:
+        prefix = self.page_prefix("linux")
+        net = TEXT["net_on"] if prefix_netns_enabled(prefix) else TEXT["net_off"]
+        try:
+            subprocess.Popen([str(self.wrapper), "-p", str(prefix), *argv],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                             stdin=subprocess.DEVNULL, start_new_session=True)
+            self.set_status(TEXT["launched"].format(name=display, net=net))
+        except Exception as exc:
+            self.set_status(TEXT["launch_failed"].format(err=exc))
 
     def install_dirs_page(self) -> Gtk.Widget:
         page, actions, self.install_dirs_list = self.make_page("install_dirs", TEXT["install_dirs"], TEXT["install_dirs_desc"], TEXT["search_dirs"])
@@ -2388,6 +2511,8 @@ class ManagerApp(Gtk.Application):
             outer.append(path_label)
         if page == "apps":
             self.apps_prefix_combo = combo
+        elif page == "linux":
+            self.linux_prefix_combo = combo
         elif page == "install_dirs":
             self.install_dirs_prefix_combo = combo
         else:
@@ -2426,6 +2551,8 @@ class ManagerApp(Gtk.Application):
             combo = self.process_prefix_combo
         elif page == "install_dirs":
             combo = self.install_dirs_prefix_combo
+        elif page == "linux":
+            combo = self.linux_prefix_combo
         else:
             combo = self.apps_prefix_combo
         text = combo.get_active_text() if combo else ""
@@ -2450,6 +2577,7 @@ class ManagerApp(Gtk.Application):
         for combo, entries in (
             (self.apps_prefix_combo, [(str(prefix), prefix) for prefix in self.prefixes]),
             (self.install_dirs_prefix_combo, [(str(prefix), prefix) for prefix in self.prefixes]),
+            (self.linux_prefix_combo, [(str(prefix), prefix) for prefix in self.prefixes]),
             (self.process_prefix_combo, process_labels),
         ):
             if not combo:
@@ -2474,6 +2602,8 @@ class ManagerApp(Gtk.Application):
             self.refresh_processes()
         elif visible == "install_dirs":
             self.refresh_install_dirs()
+        elif visible == "linux":
+            self.refresh_linux_apps()
         else:
             self.refresh_apps()
 

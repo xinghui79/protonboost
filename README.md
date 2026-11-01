@@ -14,7 +14,7 @@ lib/                           功能模块，按序 source 装载：
 bin/winrun-configure           「设置 Windows 程序运行环境」
 bin/winrun-manager             图形管理器（GTK4）
 share/applications/            桌面文件（右键打开方式 / 管理器入口）
-icons/winrun.svg|.png          图标
+icons/hicolor/              图标（512px PNG + 可缩放 SVG）
 install.sh                     安装 / 卸载脚本
 ```
 

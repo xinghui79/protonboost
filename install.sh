@@ -16,8 +16,8 @@ install)
     install -d "$PREFIX/lib/winrun"
     install -m644 -t "$PREFIX/lib/winrun" lib/*.sh
     install -Dm644 -t "$APP_DIR" share/applications/*.desktop
-    install -Dm644 icons/winrun.png "$ICON_PNG/winrun.png"
-    install -Dm644 icons/winrun.svg "$ICON_SVG/winrun.svg"
+    install -Dm644 icons/hicolor/512x512/apps/winrun.png "$ICON_PNG/winrun.png"
+    install -Dm644 icons/hicolor/scalable/apps/winrun.svg "$ICON_SVG/winrun.svg"
     command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$APP_DIR" || true
     command -v gtk-update-icon-cache >/dev/null 2>&1 && gtk-update-icon-cache -qtf "$PREFIX/share/icons/hicolor" || true
     echo "已安装到 $PREFIX — 命令: winrun / winrun-configure / winrun-manager"
