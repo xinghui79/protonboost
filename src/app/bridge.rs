@@ -59,6 +59,7 @@ pub mod ffi {
         #[qproperty(QList_QVariant, config_fps)]
         #[qproperty(bool, netns)]
         #[qproperty(bool, tray_available)]
+        #[qproperty(i32, runner_count)]
         #[qproperty(QString, exes_title)]
         #[qproperty(QList_QVariant, exes_items)]
         #[qproperty(QString, uiEvents)]
@@ -196,6 +197,7 @@ pub struct BackendRust {
     netns: bool,
     tray_available: bool,
     tray_checked: bool,
+    runner_count: i32,
     config_entry: QMap_QString_QVariant,
     config_icon: QString,
     config_runners: QList_QVariant,
@@ -503,16 +505,24 @@ impl ffi::Backend {
                         self.as_mut().set_update_details(QString::from(text));
                     }
                 }
-                jobs::ResultMsg::UpdateRun { success } => {
+                jobs::ResultMsg::UpdateRun { installed, error } => {
                     self.as_mut().rust_mut().update_running = false;
                     let zh = crate::core::loc::zh();
-                    let message = if success {
-                        if zh { "更新完成" } else { "Update complete" }
-                    } else {
-                        if zh { "更新失败" } else { "Update failed" }
+                    let message = match error {
+                        Some(err) => format!("{}: {err}", if zh { "更新失败" } else { "Update failed" }),
+                        None => {
+                            if zh {
+                                format!("已安装 {installed} 个运行器")
+                            } else {
+                                format!("Installed {installed} runner(s)")
+                            }
+                        }
                     };
                     self.as_mut().set_status(QString::from(message));
-                    self.as_mut().set_update_available(false);
+                    if installed > 0 {
+                        self.as_mut().set_update_available(false);
+                    }
+                    self.as_mut().reload_prefixes();
                     self.as_mut().check_updates();
                 }
             }
@@ -587,6 +597,7 @@ impl ffi::Backend {
                 .collect(),
         );
         self.as_mut().set_processPrefixes(process_list);
+        self.as_mut().set_runner_count(engine_runners::discover().len() as i32);
 
         // 首次加载时给状态栏一句交代
         if self.as_mut().rust().status.to_string().is_empty() {

@@ -25,7 +25,7 @@
 
 - Rust（构建用）、Qt 6：`qt6-base` `qt6-declarative` `qt6-svg`
 - 运行时：`passt`（独立网络）、`util-linux`（nsenter）、`curl` + `tar`（下载运行器/运行时）
-- 运行器：Steam 里的 Proton，或 `~/.local/share/Steam/compatibilitytools.d` 下的任意版本
+- 运行器：任意一份 Proton 或 Wine，详见下面「运行器」一节
 
 ## 安装
 
@@ -80,6 +80,27 @@ winrun-manager --dump-scan            # 打印前缀扫描结果，排查界面�
 | `~/.cache/winrun/logs` | 运行日志与会话日志 |
 | `~/.cache/winrun/icons` | 从 exe/ico 里抠出来的图标 |
 | `$PREFIX/.winrun.conf` | 前缀自己的开关（`netns=`，侧栏前缀行右边那个小开关改的就是它） |
+
+## 运行器
+
+程序本身不带 Proton / Wine，启动 Windows 程序必须有一个。按这个顺序找，找到几个就列几个：
+
+| 来源 | 位置 |
+| --- | --- |
+| 环境变量 | `WINRUN_RUNNER` / `PROTON_GE_PATH` 指向的 proton 或 wine |
+| Steam 兼容性工具 | `~/.local/share/Steam/compatibilitytools.d/<名字>/proton`（GE、DW、WE 都在这） |
+| Steam 官方 Proton | `steamapps/common/Proton *`，含其他 Steam 库 |
+| 系统级 / Flatpak | `/usr/share/steam/...`、`~/.var/app/com.valvesoftware.Steam/...` |
+| Lutris | `~/.local/share/lutris/runners/{proton,wine}` |
+| 本地目录 | `~/.local/share/proton/runners/<名字>/proton` |
+| 系统 wine | `PATH` 里的 `wine` |
+
+不绑定任何特定版本，每个程序可以在运行设置里单独选。Proton 系的还需要 Steam Linux
+Runtime（`SteamLinuxRuntime_sniper` / `soldier`），本机没有的话会自动下载。
+
+一个都没有时，应用页会显示一条提示，点「下载 GE-Proton」会从 GitHub 取最新版装到
+`~/.local/share/Steam/compatibilitytools.d/`；也可以自己装系统 wine 或 Steam 的 Proton，
+重启管理器就会列出来。
 
 ## 独立网络
 

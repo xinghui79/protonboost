@@ -1287,7 +1287,7 @@ ApplicationWindow {
                         }
                     }
                     WAccentButton {
-                        visible: backend.update_available
+                        visible: backend.update_available && backend.runner_count > 0
                         text: root.zh ? "更新运行器" : "Update Runners"
                         ToolTip.visible: hovered
                         ToolTip.delay: 300
@@ -1296,6 +1296,36 @@ ApplicationWindow {
                             (root.zh ? "以下运行器有新版本可用，是否立即更新？\n\n" : "Updates available:\n\n")
                             + backend.update_details,
                             function () { backend.update_runners_now() })
+                    }
+                }
+
+                // 一个 Proton/Wine 都没有时，程序根本跑不起来，得先把话说清楚并给出下载入口
+                Rectangle {
+                    visible: backend.runner_count === 0
+                    Layout.fillWidth: true
+                    implicitHeight: 48
+                    radius: 10
+                    color: c.accentSoft
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 14
+                        anchors.rightMargin: 10
+                        spacing: 10
+                        Text {
+                            Layout.fillWidth: true
+                            text: root.zh
+                                  ? "没有找到 Proton / Wine 运行器，程序启动不了。可以先下载一个 GE-Proton（约 400 MB）。"
+                                  : "No Proton / Wine runner found. Download GE-Proton to get started (~400 MB)."
+                            color: c.accent
+                            font.pixelSize: 12
+                            wrapMode: Text.WordWrap
+                        }
+                        WButton {
+                            outlined: true
+                            implicitHeight: 28
+                            text: root.zh ? "下载 GE-Proton" : "Download GE-Proton"
+                            onClicked: backend.update_runners_now()
+                        }
                     }
                 }
 
@@ -2451,6 +2481,17 @@ ApplicationWindow {
                                 text: cfg.programArgs
                                 onTextEdited: cfg.programArgs = text
                             }
+                        }
+
+                        Text {
+                            visible: root.runnersModel.length === 0
+                            Layout.fillWidth: true
+                            text: root.zh
+                                  ? "没有找到 Proton / Wine，保存后也启动不了；先在应用页下载一个 GE-Proton。"
+                                  : "No Proton / Wine found — download GE-Proton from the Apps page first."
+                            color: c.danger
+                            font.pixelSize: 11
+                            wrapMode: Text.WordWrap
                         }
                     }
 

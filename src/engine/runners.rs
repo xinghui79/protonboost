@@ -330,6 +330,11 @@ pub fn discover() -> Vec<Runner> {
         }
     }
 
+    // 系统包管理器装的 wine：没有 Proton 那套 DXVK/FSYNC，但跑普通程序够用，排在最后
+    if let Some(wine) = crate::core::paths::which("wine") {
+        collector.add("wine", "system", &wine);
+    }
+
     collector.runners
 }
 

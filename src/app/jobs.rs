@@ -77,7 +77,7 @@ pub enum ResultMsg {
     Exes { title: String, items: Vec<ExeRow> },
     Launch { label: String, result: Result<Vec<String>, String> },
     UpdateCheck { text: String },
-    UpdateRun { success: bool },
+    UpdateRun { installed: usize, error: Option<String> },
     Icon { req: u64, app_id: String, icon: String },
 }
 
@@ -236,8 +236,25 @@ fn handle(job: Job, tx: &Sender<ResultMsg>) {
         }
         Job::UpdateRun => {
             let candidates = crate::engine::update::check();
-            let success = crate::engine::update::install(&candidates).is_ok();
-            let _ = tx.send(ResultMsg::UpdateRun { success });
+            if candidates.is_empty() {
+                let _ = tx.send(ResultMsg::UpdateRun {
+                    installed: 0,
+                    error: Some(if crate::core::loc::zh() {
+                        "没有可下载的运行器（检查网络，或已有最新版）".into()
+                    } else {
+                        "Nothing to download (check the network)".into()
+                    }),
+                });
+            } else {
+                match crate::engine::update::install(&candidates) {
+                    Ok(count) => {
+                        let _ = tx.send(ResultMsg::UpdateRun { installed: count, error: None });
+                    }
+                    Err(err) => {
+                        let _ = tx.send(ResultMsg::UpdateRun { installed: 0, error: Some(err) });
+                    }
+                }
+            }
         }
         Job::Launch { request, label } => {
             let result = crate::engine::launch::launch(&request, crate::core::loc::zh())

@@ -113,6 +113,9 @@ fn version_newer(current: &str, latest: &str) -> bool {
 /// 已装的 Latest 运行器里，有哪些比线上的旧
 pub fn check() -> Vec<Candidate> {
     let mut found: Vec<Candidate> = Vec::new();
+    // 机器上一个 Proton / Wine 都没有：这时把「装 GE-Proton」也当成一条待办，
+    // 否则界面上根本没有下载运行器的入口，程序永远跑不起来。
+    let no_runner = crate::engine::runners::discover().is_empty();
     for product in ["ge", "dw"] {
         let Some(dir_name) = product_dir_name(product) else { continue };
         let targets: Vec<PathBuf> = install_dirs()
@@ -121,6 +124,16 @@ pub fn check() -> Vec<Candidate> {
             .filter(|dir| dir.exists())
             .collect();
         if targets.is_empty() {
+            if no_runner && product == "ge" {
+                if let Some(release) = latest_release(product) {
+                    found.push(Candidate {
+                        product: product.to_string(),
+                        target: steam_runner_dir().join(dir_name),
+                        current: String::new(),
+                        latest: release.tag.clone(),
+                    });
+                }
+            }
             continue;
         }
         let Some(release) = latest_release(product) else { continue };
@@ -226,7 +239,8 @@ pub fn describe(candidates: &[Candidate]) -> String {
                 "dw" => "DW-Proton",
                 other => other,
             };
-            format!("{product}: {} → {}", candidate.current, candidate.latest)
+            let current = if candidate.current.is_empty() { "—".to_string() } else { candidate.current.clone() };
+            format!("{product}: {current} → {}", candidate.latest)
         })
         .collect::<Vec<_>>()
         .join("\n")
