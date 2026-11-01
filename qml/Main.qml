@@ -285,6 +285,31 @@ ApplicationWindow {
         }
     }
 
+    // 只读的路径展示：点一下就去选文件/目录
+    component WPathField: AbstractButton {
+        id: pathField
+        property string value: ""
+        implicitHeight: 32
+        background: Rectangle {
+            radius: 7
+            color: c.field
+            border.width: 1
+            border.color: pathField.hovered ? c.fieldLine : c.line
+        }
+        contentItem: Text {
+            leftPadding: 10
+            rightPadding: 8
+            text: pathField.value
+            color: c.text
+            font.pixelSize: 12
+            elide: Text.ElideMiddle
+            verticalAlignment: Text.AlignVCenter
+        }
+        ToolTip.visible: hovered
+        ToolTip.delay: 600
+        ToolTip.text: pathField.value
+    }
+
     component WSearchField: TextField {
         id: ws
         implicitHeight: 34
@@ -428,7 +453,10 @@ ApplicationWindow {
     component PrefixPicker: Button {
         id: picker
         implicitHeight: 34
-        implicitWidth: Math.min(420, labelText.implicitWidth + 50)
+        implicitWidth: Math.min(300, labelText.implicitWidth + 54)
+        ToolTip.visible: hovered
+        ToolTip.delay: 600
+        ToolTip.text: value
         property var model: backend.prefixes
         property string value: root.currentPrefix()
         background: Rectangle {
@@ -448,7 +476,7 @@ ApplicationWindow {
                 text: root.prefixLabel(picker.value)
                 font.pixelSize: 13
                 color: c.text
-                elide: Text.ElideMiddle
+                elide: Text.ElideRight
             }
             Text {
                 id: chevron
@@ -496,11 +524,21 @@ ApplicationWindow {
         }
     }
 
+    function pageSummary() {
+        if (currentPage === 0) {
+            var running = 0
+            for (var i = 0; i < backend.apps.length; i++) if (backend.apps[i].running) running++
+            return backend.apps.length + (zh ? " 个应用" : " apps") + (running > 0 ? (zh ? " · " + running + " 个运行中" : " · " + running + " running") : "")
+        }
+        if (currentPage === 1) return backend.linux_apps.length + (zh ? " 个程序" : " apps")
+        if (currentPage === 2) return backend.procs.length + (zh ? " 个进程" : " processes")
+        return backend.dirs.length + (zh ? " 个目录" : " folders")
+    }
+
     function prefixLabel(path) {
         if (!path) return zh ? "没有前缀" : "No prefix"
-        var pieces = path.split("/")
-        var tail = pieces.slice(-2).join("/")
-        return path.length > 46 ? "…/" + tail : path
+        var pieces = path.replace(/\/+$/, "").split("/")
+        return pieces[pieces.length - 1] || path
     }
 
     // ── 标题栏：左边红绿灯，中间页面名 ──────────────────────
@@ -659,14 +697,7 @@ ApplicationWindow {
                 anchors.rightMargin: 10
                 spacing: 1
 
-                Text {
-                    text: root.zh ? "页面" : "SECTIONS"
-                    font.pixelSize: 11
-                    font.letterSpacing: 0.6
-                    color: c.faint
-                    Layout.leftMargin: 9
-                    Layout.bottomMargin: 7
-                }
+                Item { implicitHeight: 8 }
 
                 Repeater {
                     model: root.pageNames.length
@@ -756,6 +787,11 @@ ApplicationWindow {
                         font.pixelSize: 12
                         elide: Text.ElideMiddle
                     }
+                    Text {
+                        text: root.pageSummary()
+                        color: c.faint
+                        font.pixelSize: 12
+                    }
                 }
             }
         }
@@ -811,6 +847,35 @@ ApplicationWindow {
                 var copy = root.searchValues.slice()
                 copy[root.currentPage] = text
                 root.searchValues = copy
+            }
+        }
+    }
+
+    // 设置分组：标题 + 一块浅底卡片
+    component SettingsCard: Rectangle {
+        id: card
+        property string title: ""
+        default property alias content: inner.data
+        Layout.fillWidth: true
+        implicitHeight: inner.implicitHeight + 28
+        radius: 10
+        color: c.group
+        border.width: 1
+        border.color: c.line
+
+        ColumnLayout {
+            id: inner
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.margins: 14
+            spacing: 10
+
+            Text {
+                text: card.title
+                font.pixelSize: 11
+                font.letterSpacing: 0.6
+                color: c.faint
             }
         }
     }
@@ -1688,11 +1753,12 @@ ApplicationWindow {
         id: configDialog
         modal: true
         closePolicy: Popup.CloseOnEscape
-        width: 580
-        // 独立设置窗口里让出标题栏，红绿灯和窗口名还看得见
+        width: 600
+        // 弹层挂在 Overlay 上，而 Overlay 不含标题栏（48px），高度要按剩余空间算
+        readonly property real available: root.height - 48
         x: Math.round((root.width - width) / 2)
-        y: root.configureMode ? 56 : Math.max(12, Math.round((root.height - height) / 2))
-        height: root.configureMode ? Math.min(696, root.height - 80) : Math.min(700, root.height - 40)
+        y: Math.max(8, Math.round((available - height) / 2))
+        height: Math.min(root.configureMode ? 700 : 720, available - 24)
         padding: 0
         background: Rectangle { radius: 14; color: c.row; border.width: 1; border.color: c.line }
 
@@ -1744,30 +1810,65 @@ ApplicationWindow {
         contentItem: ColumnLayout {
             spacing: 0
 
-            // 头
+            // ── 头部：这是哪个程序 ──
             Item {
                 Layout.fillWidth: true
-                implicitHeight: 56
+                implicitHeight: 68
+
                 RowLayout {
                     anchors.fill: parent
                     anchors.leftMargin: 20
                     anchors.rightMargin: 12
-                    Text {
-                        text: cfg.name !== "" ? cfg.name : (root.zh ? "运行设置" : "Run Settings")
-                        font.pixelSize: 15
-                        font.weight: Font.DemiBold
-                        color: c.text
-                        elide: Text.ElideRight
-                        Layout.fillWidth: true
+                    spacing: 12
+
+                    Rectangle {
+                        Layout.preferredWidth: 34
+                        Layout.preferredHeight: 34
+                        radius: 9
+                        color: c.accentSoft
+                        Text {
+                            anchors.centerIn: parent
+                            text: (cfg.name || cfg.exe || "?").replace(/^.*[\\/]/, "").charAt(0).toUpperCase()
+                            font.pixelSize: 15
+                            font.weight: Font.DemiBold
+                            color: c.accent
+                        }
                     }
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 2
+                        Text {
+                            Layout.fillWidth: true
+                            text: cfg.name !== "" ? cfg.name : (root.zh ? "运行设置" : "Run Settings")
+                            font.pixelSize: 15
+                            font.weight: Font.DemiBold
+                            color: c.text
+                            elide: Text.ElideRight
+                        }
+                        Text {
+                            Layout.fillWidth: true
+                            text: cfg.exe
+                            font.pixelSize: 11
+                            color: c.dim
+                            elide: Text.ElideMiddle
+                        }
+                    }
+
                     WIconButton { glyph: "✕"; onClicked: configDialog.cancelled() }
                 }
                 Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: c.line }
             }
 
-            Flickable {
+            // ── 中间：三组设置 ──
+            Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
+                Layout.minimumHeight: 0
+                implicitHeight: 200
+
+                Flickable {
+                anchors.fill: parent
                 clip: true
                 contentWidth: width
                 contentHeight: formCol.implicitHeight + 32
@@ -1781,74 +1882,90 @@ ApplicationWindow {
                     width: parent.width - 40
                     spacing: 14
 
-                    // 常规
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 10
-                        Text { text: root.zh ? "常规" : "GENERAL"; font.pixelSize: 11; font.letterSpacing: 0.8; color: c.faint }
+                    SettingsCard {
+                        title: root.zh ? "常规" : "GENERAL"
+
                         GridLayout {
                             columns: 2
-                            columnSpacing: 12
-                            rowSpacing: 10
+                            columnSpacing: 10
+                            rowSpacing: 8
                             Layout.fillWidth: true
-                            Text { text: root.zh ? "程序" : "Program"; color: c.dim; font.pixelSize: 12; Layout.preferredWidth: 74 }
+                            Layout.topMargin: 2
+
+                            Text { text: root.zh ? "程序" : "Program"; color: c.dim; font.pixelSize: 12; Layout.preferredWidth: 62 }
                             RowLayout {
                                 spacing: 6
                                 Layout.fillWidth: true
-                                WField { id: cfgExe; Layout.fillWidth: true; text: cfg.exe; onTextEdited: cfg.exe = text }
-                                WButton { text: root.zh ? "选择" : "Browse"; onClicked: exeDialog.open() }
+                                WPathField {
+                                    Layout.fillWidth: true
+                                    value: cfg.exe
+                                    onClicked: exeDialog.open()
+                                }
+                                WButton { outlined: true; implicitHeight: 32; text: root.zh ? "选择" : "Browse"; onClicked: exeDialog.open() }
                             }
-                            Text { text: root.zh ? "显示名称" : "Name"; color: c.dim; font.pixelSize: 12 }
+
+                            Text { text: root.zh ? "名称" : "Name"; color: c.dim; font.pixelSize: 12 }
                             WField {
+                                implicitHeight: 32
                                 Layout.fillWidth: true
                                 text: cfg.name
-                                placeholderText: root.zh ? "留空则用程序名" : "Defaults to file name"
+                                placeholderText: root.zh ? "留空用文件名" : "Defaults to file name"
                                 onTextEdited: cfg.name = text
                             }
+
                             Text { text: root.zh ? "前置环境" : "Prefix"; color: c.dim; font.pixelSize: 12 }
                             RowLayout {
                                 spacing: 6
                                 Layout.fillWidth: true
-                                WField { id: cfgPrefix; Layout.fillWidth: true; text: cfg.prefix; onTextEdited: cfg.prefix = text }
-                                WButton { text: root.zh ? "选择" : "Browse"; onClicked: prefixDialog.open() }
+                                WPathField {
+                                    Layout.fillWidth: true
+                                    value: cfg.prefix
+                                    onClicked: prefixDialog.open()
+                                }
+                                WButton { outlined: true; implicitHeight: 32; text: root.zh ? "选择" : "Browse"; onClicked: prefixDialog.open() }
                             }
+
                             Text { text: root.zh ? "运行器" : "Runner"; color: c.dim; font.pixelSize: 12 }
                             WComboBox {
                                 id: cfgRunner
+                                implicitHeight: 32
                                 Layout.fillWidth: true
                                 model: root.runnersModel
                                 textRole: "label"
                                 onEditTextChanged: cfg.runner = editText
                                 onActivated: cfg.runner = editText
                             }
+
                             Text { text: root.zh ? "启动参数" : "Arguments"; color: c.dim; font.pixelSize: 12 }
                             WField {
                                 id: cfgArgs
+                                implicitHeight: 32
                                 Layout.fillWidth: true
-                                placeholderText: root.zh ? "追加在程序路径后面，如 -dx11" : "Appended to the program path"
+                                placeholderText: root.zh ? "追加在程序后面，如 -dx11" : "Appended to the program path"
                                 text: cfg.programArgs
                                 onTextEdited: cfg.programArgs = text
                             }
                         }
                     }
 
-                    Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: c.line }
+                    SettingsCard {
+                        title: "GAMESCOPE"
 
-                    // Gamescope
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 10
-                        Text { text: "GAMESCOPE"; font.pixelSize: 11; font.letterSpacing: 0.8; color: c.faint }
                         Text {
-                            text: root.zh ? "遇到兼容问题、或者想要全屏缩放时，可以用 gamescope 包一层。"
+                            Layout.fillWidth: true
+                            Layout.topMargin: 2
+                            text: root.zh ? "兼容性不好、或者想全屏缩放时用，游戏会跑在它自己的小窗口里。"
                                           : "Wrap the program in gamescope for scaling or compatibility."
-                            color: c.dim; font.pixelSize: 12; wrapMode: Text.WordWrap; Layout.fillWidth: true
+                            color: c.dim
+                            font.pixelSize: 12
+                            wrapMode: Text.WordWrap
                         }
+
                         RowLayout {
                             spacing: 18
                             WCheckBox {
                                 id: cfgGamescope
-                                text: root.zh ? "使用 Gamescope" : "Use Gamescope"
+                                text: root.zh ? "启用" : "Enable"
                                 checked: cfg.gamescope
                                 onToggled: cfg.gamescope = checked
                             }
@@ -1867,14 +1984,17 @@ ApplicationWindow {
                                 onToggled: cfg.fsr = checked
                             }
                         }
+
                         GridLayout {
                             columns: 2
-                            columnSpacing: 12
-                            rowSpacing: 10
+                            columnSpacing: 10
+                            rowSpacing: 8
                             Layout.fillWidth: true
-                            Text { text: root.zh ? "分辨率" : "Resolution"; color: c.dim; font.pixelSize: 12; Layout.preferredWidth: 74 }
+
+                            Text { text: root.zh ? "分辨率" : "Resolution"; color: c.dim; font.pixelSize: 12; Layout.preferredWidth: 62 }
                             WComboBox {
                                 id: cfgRes
+                                implicitHeight: 32
                                 Layout.fillWidth: true
                                 model: root.resolutionsModel
                                 textRole: "value"
@@ -1882,9 +2002,11 @@ ApplicationWindow {
                                 onEditTextChanged: cfg.res = editText
                                 onActivated: cfg.res = editText
                             }
+
                             Text { text: root.zh ? "帧率上限" : "FPS limit"; color: c.dim; font.pixelSize: 12 }
                             WComboBox {
                                 id: cfgFps
+                                implicitHeight: 32
                                 Layout.fillWidth: true
                                 model: root.fpsModel
                                 textRole: "value"
@@ -1892,8 +2014,10 @@ ApplicationWindow {
                                 onEditTextChanged: cfg.fps = editText
                                 onActivated: cfg.fps = editText
                             }
+
                             Text { text: root.zh ? "额外参数" : "Extra args"; color: c.dim; font.pixelSize: 12 }
                             WField {
+                                implicitHeight: 32
                                 Layout.fillWidth: true
                                 text: cfg.args
                                 enabled: cfgGamescope.checked
@@ -1902,23 +2026,17 @@ ApplicationWindow {
                         }
                     }
 
-                    Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: c.line }
+                    SettingsCard {
+                        title: root.zh ? "其他" : "OTHER"
 
-                    // 其他
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 10
-                        Text { text: root.zh ? "其他" : "OTHER"; font.pixelSize: 11; font.letterSpacing: 0.8; color: c.faint }
                         WCheckBox {
                             id: cfgMangohud
-                            text: "MangoHud"
+                            Layout.topMargin: 2
+                            text: root.zh ? "MangoHud（显示帧率与占用）" : "MangoHud (FPS and usage)"
                             checked: cfg.mangohud
                             onToggled: cfg.mangohud = checked
                         }
-                        Text {
-                            text: root.zh ? "显示帧率与占用" : "Show FPS and usage"
-                            color: c.faint; font.pixelSize: 12; Layout.leftMargin: 27
-                        }
+
                         WCheckBox {
                             id: cfgWayland
                             text: root.zh ? "以 Wayland 运行" : "Run on Wayland"
@@ -1926,19 +2044,25 @@ ApplicationWindow {
                             enabled: !cfgGamescope.checked
                             onToggled: cfg.wayland = checked
                         }
+
                         Text {
+                            Layout.fillWidth: true
+                            Layout.leftMargin: 27
                             text: root.zh ? "用 Wine 的 Wayland 驱动；开了 Gamescope 就不生效。"
                                           : "Use Wine's Wayland driver; ignored with Gamescope."
-                            color: c.faint; font.pixelSize: 12; Layout.leftMargin: 27
-                            wrapMode: Text.WordWrap; Layout.fillWidth: true
+                            color: c.faint
+                            font.pixelSize: 11
+                            wrapMode: Text.WordWrap
                         }
+
                         GridLayout {
                             columns: 2
-                            columnSpacing: 12
+                            columnSpacing: 10
                             Layout.fillWidth: true
-                            Text { text: root.zh ? "环境变量" : "Env vars"; color: c.dim; font.pixelSize: 12; Layout.preferredWidth: 74 }
+                            Text { text: root.zh ? "环境变量" : "Env vars"; color: c.dim; font.pixelSize: 12; Layout.preferredWidth: 62 }
                             WField {
                                 id: cfgEnv
+                                implicitHeight: 32
                                 Layout.fillWidth: true
                                 placeholderText: "KEY=VALUE KEY2=VALUE2"
                                 text: cfg.envVars
@@ -1947,12 +2071,14 @@ ApplicationWindow {
                         }
                     }
                 }
+                }
             }
 
+            // ── 底部按钮 ──
             Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: c.line }
             Item {
                 Layout.fillWidth: true
-                implicitHeight: 60
+                implicitHeight: 62
                 RowLayout {
                     anchors.fill: parent
                     anchors.leftMargin: 20
@@ -1960,6 +2086,7 @@ ApplicationWindow {
                     spacing: 8
                     WButton {
                         visible: root.configureMode
+                        outlined: true
                         text: root.zh ? "保存并运行" : "Save & Run"
                         onClicked: {
                             var entry = configDialog.collect()
