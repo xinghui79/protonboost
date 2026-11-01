@@ -7,3 +7,10 @@ dist/
 
 # 本地工作记录与验收截图
 /.workbuddy/
+
+# makepkg 的产物（只留 PKGBUILD）
+/packaging/src/
+/packaging/pkg/
+/packaging/*.pkg.tar.*
+/packaging/*.tar.gz
+/packaging/*.tar.zst
