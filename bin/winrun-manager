@@ -19,7 +19,8 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
-from gi.repository import Gdk, Gio, GLib, Gtk, Pango
+gi.require_version("Adw", "1")
+from gi.repository import Adw, Gdk, Gio, GLib, Gtk, Pango
 
 
 def is_zh() -> bool:
@@ -1306,16 +1307,12 @@ def install_css() -> None:
   padding: 12px;
   background-color: alpha(@theme_fg_color, 0.035);
 }
-.sidebar {
-  padding: 10px 8px;
+.sidebar-pane {
   background-color: alpha(@theme_fg_color, 0.045);
   border-right: 1px solid alpha(@theme_fg_color, 0.07);
 }
-.winrun-title { font-weight: 700; }
-.page-header .heading {
-  font-size: 17px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
+.sidebar-pane switcher {
+  background-color: transparent;
 }
 .sidebar-button {
   padding: 9px 12px;
@@ -1337,33 +1334,12 @@ def install_css() -> None:
   color: @accent_color;
 }
 
-.winrun-list {
-  background-color: alpha(@theme_fg_color, 0.028);
-  border: 1px solid alpha(@theme_fg_color, 0.07);
-  border-radius: 12px;
-}
-.winrun-list row {
-  background-color: transparent;
-}
-.winrun-list row:hover {
-  background-color: alpha(@theme_fg_color, 0.045);
-}
-.row-card {
-  padding: 9px 12px;
-  border-bottom: 1px solid alpha(@theme_fg_color, 0.06);
-}
-.row-card button {
-  min-height: 34px;
-}
 .winrun-dialog entry {
   min-height: 36px;
 }
 .winrun-dialog .heading {
   font-size: 16px;
   font-weight: 700;
-}
-.winrun-list row:last-child {
-  border-bottom: none;
 }
 .prefix-toolbar {
   padding: 0;
@@ -1486,6 +1462,7 @@ combobox:focus button {
   padding: 5px 12px;
   min-height: 32px;
   min-width: 0;
+  background-image: none;
   background-color: transparent;
   border-color: transparent;
   color: alpha(@theme_fg_color, 0.85);
@@ -1494,19 +1471,21 @@ combobox:focus button {
   color: rgb(229, 83, 75);
 }
 .run-button {
-  background-color: @accent_bg_color;
-  color: @accent_fg_color;
+  background-image: none;
+  background-color: #6366f1;
+  color: #ffffff;
   font-weight: 600;
   min-width: 64px;
   border-color: transparent;
 }
 .run-button:hover {
-  background-color: @accent_hover;
-  color: @accent_fg_color;
+  background-image: none;
+  background-color: #818cf1;
+  color: #ffffff;
   border-color: transparent;
 }
 .run-button:active {
-  background-color: shade(@accent_bg_color, 0.85);
+  background-color: #4f46e5;
 }
 .icon-button {
   padding: 0;
@@ -2417,13 +2396,12 @@ class ManagerApp(Gtk.Application):
         self.process_prefix_display_paths: dict[str, Path] = {}
         self.process_path_label = None
         self.prefix_entry = None
-        self.stack = None
-        self.nav_buttons = {}
+        self.viewstack = None
         self.apps_list = None
-        self.linux_list = None
-        self.linux_signature = None
         self.install_dirs_list = None
         self.process_list = None
+        self.linux_list = None
+        self.linux_signature = None
         self.apps_signature = None
         self.install_dirs_signature = None
         self.status_label = None
@@ -2435,46 +2413,68 @@ class ManagerApp(Gtk.Application):
         self.update_check_source_id = 0
         self.update_running = False
         self.netns_switch = None
-        self.syncing_netns = False
         self.search_entries: dict[str, Gtk.SearchEntry] = {}
         self.icon_loader = IconLoader()
         self.tray = None
-
     def do_activate(self):
         if self.window is not None:
             self.window.present()
             return
         sync_color_scheme()
         install_css()
-        self.window = Gtk.ApplicationWindow(application=self, title=TEXT["title"])
+        self.window = Adw.ApplicationWindow(application=self, title=TEXT["title"])
         Gtk.Window.set_default_icon_name("winrun")
-        icons_dir = Path(__file__).resolve().parent.parent / "icons"
-        if (icons_dir / "hicolor").is_dir():
-            Gtk.IconTheme.get_for_display(self.window.get_display()).add_search_path(str(icons_dir))
-        self.window.set_default_size(1080, 720)
+        self.window.set_default_size(1120, 760)
 
-        header = Gtk.HeaderBar()
-        title = Gtk.Label(label=TEXT["title"])
-        title.add_css_class("title")
-        title.add_css_class("winrun-title")
-        header.set_title_widget(title)
-        self.window.set_titlebar(header)
+        header = Adw.HeaderBar()
+        header.set_title_widget(Adw.WindowTitle(title="WinRun 管理器" if ZH else "WinRun Manager", subtitle=""))
 
-        outer = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
-        outer.append(self.build_sidebar())
+        self.viewstack = Gtk.Stack()
+        children = {
+            "apps": self.apps_page(),
+            "linux": self.linux_page(),
+            "processes": self.process_page(),
+            "install_dirs": self.install_dirs_page(),
+        }
+        icons = {"apps": "view-grid-symbolic",
+                 "linux": "applications-system-symbolic",
+                 "processes": "utilities-system-monitor-symbolic",
+                 "install_dirs": "folder-symbolic"}
+        titles = {"apps": TEXT["apps"], "linux": TEXT["linux_apps"],
+                  "processes": TEXT["processes"], "install_dirs": TEXT["install_dirs"]}
+        for name, child in children.items():
+            self.viewstack.add_titled(child, name, titles[name])
+            self.viewstack.get_page(child).set_icon_name(icons[name])
 
-        content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
-        content.append(self.build_stack())
+        switcher = Gtk.StackSidebar(stack=self.viewstack)
+        switcher.set_vexpand(True)
+        sidebar = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        sidebar.append(switcher)
+        sidebar.set_size_request(190, -1)
+        sidebar.set_vexpand(True)
+        sidebar.add_css_class("sidebar-pane")
+
+        content = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+        content.append(sidebar)
+        content.append(Gtk.Separator(orientation=Gtk.Orientation.VERTICAL))
+        self.viewstack.set_vexpand(True)
+        content.append(self.viewstack)
+
         self.status_label = Gtk.Label(label="", xalign=0)
         self.status_label.add_css_class("dim-label")
-        self.status_label.set_margin_top(8)
-        self.status_label.set_margin_bottom(8)
+        self.status_label.set_margin_top(6)
+        self.status_label.set_margin_bottom(6)
         self.status_label.set_margin_start(18)
         self.status_label.set_margin_end(14)
-        content.append(self.status_label)
-        outer.append(content)
+        status_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+        status_row.append(self.status_label)
 
-        self.window.set_child(outer)
+        toolbar = Adw.ToolbarView()
+        toolbar.add_top_bar(header)
+        toolbar.set_content(content)
+        toolbar.add_bottom_bar(status_row)
+        self.window.set_content(toolbar)
+
         shortcuts = Gtk.ShortcutController()
         shortcuts.add_shortcut(Gtk.Shortcut.new(Gtk.ShortcutTrigger.parse_string("<Control>f"),
                                                 Gtk.CallbackAction.new(self.focus_search)))
@@ -2486,11 +2486,13 @@ class ManagerApp(Gtk.Application):
         if self.tray is None:
             self.tray = WinRunTray(on_open=self.toggle_from_tray, on_quit=self.quit)
         self.reload_prefixes()
-        self.refresh_all()
+        initial = (os.environ.get("WINRUN_PAGE") or "apps").split("=")[-1]
+        if initial not in ("apps", "linux", "processes", "install_dirs"):
+            initial = "apps"
+        self.set_page(initial)
         self.refresh_source_id = GLib.timeout_add_seconds(3, self.auto_refresh)
         self.check_for_updates()
         self.update_check_source_id = GLib.timeout_add_seconds(600, self.check_for_updates)
-
     def on_close_request(self, *_args) -> bool:
         # Super+Q / 关闭按钮 = 隐藏到托盘；退出只能经托盘右键
         self.window.hide()
@@ -2520,47 +2522,15 @@ class ManagerApp(Gtk.Application):
             self.tray.cleanup()
         Gtk.Application.do_shutdown(self)
 
-    def build_sidebar(self) -> Gtk.Box:
-        sidebar = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-        sidebar.add_css_class("sidebar")
-        sidebar.set_size_request(192, -1)
-        sidebar.set_margin_top(12)
-        sidebar.set_margin_start(10)
-        sidebar.set_valign(Gtk.Align.START)
-        icons = {"apps": "view-grid-symbolic",
-                 "linux": "applications-system-symbolic",
-                 "processes": "utilities-system-monitor-symbolic",
-                 "install_dirs": "folder-symbolic"}
-        for name, label in (("apps", TEXT["apps"]), ("linux", TEXT["linux_apps"]),
-                            ("processes", TEXT["processes"]), ("install_dirs", TEXT["install_dirs"])):
-            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-            icon = Gtk.Image.new_from_gicon(Gio.ThemedIcon.new(icons[name]))
-            icon.set_pixel_size(16)
-            row.append(icon)
-            row.append(Gtk.Label(label=label, xalign=0))
-            button = Gtk.Button()
-            button.set_child(row)
-            button.add_css_class("sidebar-button")
-            button.connect("clicked", lambda _b, page=name: self.set_page(page))
-            self.nav_buttons[name] = button
-            sidebar.append(button)
-        return sidebar
-
     def set_page(self, name: str) -> None:
-        if self.stack:
-            self.stack.set_visible_child_name(name)
-        for page, button in self.nav_buttons.items():
-            if page == name:
-                button.add_css_class("nav-button-active")
-            else:
-                button.remove_css_class("nav-button-active")
+        if self.viewstack:
+            self.viewstack.set_visible_child_name(name)
         # typing anywhere in the window searches the page shown
         for page, entry in self.search_entries.items():
             entry.set_key_capture_widget(self.window if page == name else None)
         self.refresh_all()
-
     def focus_search(self, *_args) -> bool:
-        entry = self.search_entries.get(self.stack.get_visible_child_name() if self.stack else "apps")
+        entry = self.search_entries.get(self.viewstack.get_visible_child_name() if self.viewstack else "apps")
         if entry:
             entry.grab_focus()
         return True
@@ -2568,7 +2538,7 @@ class ManagerApp(Gtk.Application):
     def clear_search(self, *_args) -> bool:
         """Escape ends a search that typing in the window started, where the
         entry does not have the focus."""
-        entry = self.search_entries.get(self.stack.get_visible_child_name() if self.stack else "apps")
+        entry = self.search_entries.get(self.viewstack.get_visible_child_name() if self.viewstack else "apps")
         if not entry or not entry.get_text():
             return False
         entry.set_text("")
@@ -2589,49 +2559,40 @@ class ManagerApp(Gtk.Application):
         self.search_entries[page] = entry
         return entry
 
-    def build_stack(self) -> Gtk.Stack:
-        self.stack = Gtk.Stack(hexpand=True, vexpand=True)
-        self.stack.add_named(self.apps_page(), "apps")
-        self.stack.add_named(self.linux_page(), "linux")
-        self.stack.add_named(self.install_dirs_page(), "install_dirs")
-        self.stack.add_named(self.process_page(), "processes")
-        initial = (os.environ.get("WINRUN_PAGE") or "apps").split("=")[-1]
-        if initial not in ("apps", "linux", "processes", "install_dirs"):
-            initial = "apps"
-        self.set_page(initial)
-        return self.stack
-
-    def make_page(self, name: str, title: str, description: str, search_hint: str) -> tuple[Gtk.Box, Gtk.Box, Gtk.ListBox]:
-        page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        page.set_margin_top(16)
-        page.set_margin_bottom(16)
-        page.set_margin_start(16)
-        page.set_margin_end(16)
-        header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
-        header.add_css_class("page-header")
-        if title or description:
-            header.append(section(title, description))
-            spacer = Gtk.Box(hexpand=True)
-            header.append(spacer)
-        actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        actions.set_valign(Gtk.Align.START)
-        header.append(actions)
-        page.append(header)
+    def make_page(self, name: str, description: str, search_hint: str,
+                  actions: list[Gtk.Widget] | None = None, show_prefix: bool = True):
         list_box = Gtk.ListBox()
         list_box.set_selection_mode(Gtk.SelectionMode.NONE)
-        list_box.add_css_class("winrun-list")
-        page.append(self.search_entry(name, list_box, search_hint))
+        list_box.add_css_class("boxed-list")
+        entry = self.search_entry(name, list_box, search_hint)
+
+        page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        page.set_margin_top(18)
+        page.set_margin_bottom(18)
+        page.set_margin_start(18)
+        page.set_margin_end(18)
+        if description:
+            desc = Gtk.Label(label=description, xalign=0, wrap=True)
+            desc.add_css_class("dim-label")
+            page.append(desc)
+        if show_prefix:
+            page.append(self.prefix_selector(name))
+        top = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        entry.set_hexpand(True)
+        top.append(entry)
+        for widget in actions or []:
+            top.append(widget)
+        page.append(top)
+
         scroll = Gtk.ScrolledWindow(hexpand=True, vexpand=True)
         scroll.set_child(list_box)
         page.append(scroll)
-        return page, actions, list_box
-
+        return page, list_box
     def apps_page(self) -> Gtk.Widget:
-        page, actions, self.apps_list = self.make_page("apps", "", "", TEXT["search_apps"])
-        page.insert_child_after(self.prefix_selector("apps"), page.get_first_child())
+        page, self.apps_list = self.make_page("apps", "", TEXT["search_apps"], show_prefix=True)
         overlay = Gtk.Overlay()
         overlay.set_child(page)
-        create = Gtk.Button(label="")
+        create = Gtk.Button(label="")
         create.add_css_class("compact-button")
         create.add_css_class("icon-button")
         create.set_size_request(34, 34)
@@ -2640,36 +2601,27 @@ class ManagerApp(Gtk.Application):
         create.set_margin_end(18)
         create.set_margin_bottom(18)
         create.set_tooltip_text(TEXT["add_config"])
-        create.connect("clicked", self.on_create_config)
+        create.connect("clicked", lambda _b: self.on_create_config())
         overlay.add_overlay(create)
         return overlay
-
     def process_page(self) -> Gtk.Widget:
-        page, actions, self.process_list = self.make_page("processes", TEXT["processes"], TEXT["processes_desc"], TEXT["search_processes"])
-        page.insert_child_after(self.prefix_selector("processes"), page.get_first_child())
-        refresh = Gtk.Button(label=TEXT["refresh"])
-        refresh.add_css_class("compact-button")
+        refresh = self.compact_button(TEXT["refresh"])
         refresh.connect("clicked", lambda _b: self.refresh_process_page())
-        actions.append(refresh)
-        kill_all = Gtk.Button(label=TEXT["kill_all"])
-        kill_all.add_css_class("destructive-action")
-        kill_all.connect("clicked", self.on_kill_all_processes)
-        actions.append(kill_all)
+        kill_all = self.compact_button(TEXT["kill_all"], "destructive-action")
+        kill_all.connect("clicked", lambda _b: self.on_kill_all_processes())
+        page, self.process_list = self.make_page("processes", TEXT["processes_desc"], TEXT["search_processes"],
+                                                 actions=[refresh, kill_all], show_prefix=True)
         return page
-
     def linux_page(self) -> Gtk.Widget:
-        page, actions, self.linux_list = self.make_page("linux", TEXT["linux_apps"], TEXT["linux_desc"], TEXT["search_linux"])
-        page.insert_child_after(self.prefix_selector("linux"), page.get_first_child())
         entry = Gtk.Entry()
         entry.set_placeholder_text(TEXT["custom_cmd_hint"])
         entry.set_size_request(260, -1)
         entry.connect("activate", lambda _e: self.on_launch_custom(entry))
         launch = self.compact_button(TEXT["run"], "run-button")
         launch.connect("clicked", lambda _b: self.on_launch_custom(entry))
-        actions.append(entry)
-        actions.append(launch)
+        page, self.linux_list = self.make_page("linux", TEXT["linux_desc"], TEXT["search_linux"],
+                                               actions=[entry, launch], show_prefix=True)
         return page
-
     def scan_linux_desktops(self) -> list[dict[str, str]]:
         import configparser
         bases = [Path("/usr/local/share/applications"),
@@ -2707,16 +2659,15 @@ class ManagerApp(Gtk.Application):
             self.linux_list.append(self.empty_row(TEXT["no_linux_apps"]))
             return
         for app in apps:
-            row = SearchRow(app["name"], app["id"], app["path"], key=app["id"])
-            box = self.row_box()
-            box.append(self.icon_widget(app["icon"] or "application-x-executable-symbolic"))
-            box.append(self.text_column(app["name"], app["path"]))
+            row = Adw.ActionRow(title=app["name"], subtitle=app["path"])
+            row.set_subtitle_lines(1)
+            row.search_text = " ".join([app["name"], app["id"], app["path"]]).casefold()
+            row.key = app["id"]
+            row.add_prefix(self.icon_widget(app["icon"] or "application-x-executable-symbolic"))
             run_button = self.compact_button(TEXT["run"], "run-button")
             run_button.connect("clicked", lambda _b, item=app: self.on_launch_linux_desktop(item))
-            box.append(run_button)
-            row.set_child(box)
+            row.add_suffix(run_button)
             self.linux_list.append(row)
-
     def refresh_linux_apps(self) -> None:
         if not self.linux_list:
             return
@@ -2758,14 +2709,9 @@ class ManagerApp(Gtk.Application):
             self.set_status(TEXT["launch_failed"].format(err=exc))
 
     def install_dirs_page(self) -> Gtk.Widget:
-        page, actions, self.install_dirs_list = self.make_page("install_dirs", TEXT["install_dirs"], TEXT["install_dirs_desc"], TEXT["search_dirs"])
-        page.insert_child_after(self.prefix_selector("install_dirs"), page.get_first_child())
-        refresh = Gtk.Button(label=TEXT["refresh"])
-        refresh.add_css_class("compact-button")
-        refresh.connect("clicked", lambda _b: self.refresh_install_dirs(force=True))
-        actions.append(refresh)
+        page, self.install_dirs_list = self.make_page("install_dirs", TEXT["install_dirs_desc"],
+                                                      TEXT["search_dirs"], show_prefix=True)
         return page
-
     def prefix_selector(self, page: str) -> Gtk.Widget:
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
@@ -2833,14 +2779,14 @@ class ManagerApp(Gtk.Application):
             self.process_path_label.set_visible(False)
 
     def on_prefix_combo_changed(self, combo: Gtk.ComboBoxText) -> None:
-        visible = self.stack.get_visible_child_name() if self.stack else "apps"
+        visible = self.viewstack.get_visible_child_name() if self.viewstack else "apps"
         self.update_prefix_path_label(combo, "processes" if visible == "processes" else visible)
         self.refresh_all()
 
     def current_prefix(self) -> Path:
         combo = self.current_prefix_combo()
         text = combo.get_active_text() if combo else ""
-        visible = self.stack.get_visible_child_name() if self.stack else "apps"
+        visible = self.viewstack.get_visible_child_name() if self.viewstack else "apps"
         if visible == "processes" and text in self.process_prefix_display_paths:
             return self.process_prefix_display_paths[text]
         return expand_path(text or Path.home() / ".proton")
@@ -2860,7 +2806,7 @@ class ManagerApp(Gtk.Application):
         return expand_path(text or Path.home() / ".proton")
 
     def current_prefix_combo(self) -> Gtk.ComboBoxText | None:
-        visible = self.stack.get_visible_child_name() if self.stack else "apps"
+        visible = self.viewstack.get_visible_child_name() if self.viewstack else "apps"
         if visible == "processes":
             return self.process_prefix_combo
         if visible == "install_dirs":
@@ -2898,7 +2844,7 @@ class ManagerApp(Gtk.Application):
             return
         if self.window is not None and not self.window.get_visible():
             return
-        visible = self.stack.get_visible_child_name() if self.stack else "apps"
+        visible = self.viewstack.get_visible_child_name() if self.viewstack else "apps"
         if visible == "processes":
             self.refresh_processes()
         elif visible == "install_dirs":
@@ -2916,7 +2862,7 @@ class ManagerApp(Gtk.Application):
         if self.popover_open:
             return True
         self.refresh_tick += 1
-        visible = self.stack.get_visible_child_name() if self.stack else ""
+        visible = self.viewstack.get_visible_child_name() if self.viewstack else ""
         if visible == "processes":
             if self.refresh_tick % 2 == 0:
                 self.reload_prefixes()
@@ -2993,32 +2939,6 @@ class ManagerApp(Gtk.Application):
             if isinstance(child, Gtk.ListBoxRow):
                 list_box.remove(child)
             child = next_child
-
-    def row_box(self) -> Gtk.Box:
-        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        box.add_css_class("row-card")
-        box.set_margin_top(2)
-        box.set_margin_bottom(2)
-        box.set_valign(Gtk.Align.CENTER)
-        return box
-
-    def text_column(self, title: str, detail: str, tooltip: str | None = None, dim: bool = False) -> Gtk.Box:
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
-        box.set_hexpand(True)
-        title_label = Gtk.Label(label=title, xalign=0, wrap=True)
-        title_label.add_css_class("heading")
-        if dim:
-            title_label.add_css_class("dim-label")
-        # one line: a long path is shortened in the middle, the tooltip has it all
-        detail_label = Gtk.Label(label=detail, xalign=0)
-        detail_label.set_single_line_mode(True)
-        detail_label.set_ellipsize(Pango.EllipsizeMode.MIDDLE)
-        detail_label.set_tooltip_text(tooltip or detail)
-        detail_label.add_css_class("dim-label")
-        detail_label.set_selectable(True)
-        box.append(title_label)
-        box.append(detail_label)
-        return box
 
     def icon_widget(self, icon: str) -> Gtk.Image:
         if icon and Path(icon).is_file():
@@ -3155,34 +3075,6 @@ class ManagerApp(Gtk.Application):
         menu.set_child(box)
         return self.compact_menu_button(menu)
 
-    def netns_toggle(self) -> Gtk.Widget:
-        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        box.set_valign(Gtk.Align.CENTER)
-        label = Gtk.Label(label=TEXT["netns"])
-        label.add_css_class("prefix-label")
-        switch = Gtk.Switch()
-        switch.set_valign(Gtk.Align.CENTER)
-        has_pasta = shutil_which("pasta") is not None
-        switch.set_sensitive(has_pasta)
-        box.set_tooltip_text(TEXT["netns_desc"] if has_pasta else TEXT["netns_missing"])
-        switch.connect("state-set", self.on_netns_state_set)
-        self.netns_switch = switch
-        box.append(label)
-        box.append(switch)
-        return box
-
-    def on_netns_state_set(self, _switch: Gtk.Switch, state: bool) -> bool:
-        if self.syncing_netns:
-            return False
-        prefix = self.page_prefix("apps")
-        result = subprocess.run([self.wrapper, "-p", str(prefix), "--netns", "on" if state else "off"],
-                                check=False, text=True, capture_output=True)
-        if result.returncode != 0:
-            display_message(self.window, TEXT["error"], (result.stderr or result.stdout).strip())
-            return True  # keep the switch where it was
-        self.set_status(f'{TEXT["netns"]}: {prefix}')
-        return False
-
     def sync_netns_switch(self, prefix: Path) -> None:
         if not self.netns_switch:
             return
@@ -3274,25 +3166,6 @@ class ManagerApp(Gtk.Application):
         self.check_for_updates()
         return False
 
-    def cache_menu_button(self, entry: dict[str, str]) -> Gtk.MenuButton:
-        menu = Gtk.Popover()
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-        box.set_margin_top(8)
-        box.set_margin_bottom(8)
-        box.set_margin_start(8)
-        box.set_margin_end(8)
-        run = self.compact_button(TEXT["run"])
-        run.connect("clicked", lambda _b, item=entry, popover=menu: (popover.popdown(), self.run_path(item.get("exe", ""), item.get("prefix", ""), item.get("runner", ""))))
-        open_dir = self.compact_button(TEXT["open_dir"])
-        open_dir.connect("clicked", lambda _b, item=entry, popover=menu: (popover.popdown(), self.open_folder(Path(item.get("exe", "")).parent)))
-        delete = self.compact_button(TEXT["delete"], "menu-item-danger")
-        delete.connect("clicked", lambda _b, item=entry, popover=menu: (popover.popdown(), self.delete_cache(item.get("file", ""))))
-        box.append(run)
-        box.append(open_dir)
-        box.append(delete)
-        menu.set_child(box)
-        return self.compact_menu_button(menu)
-
     def empty_row(self, message: str) -> Gtk.ListBoxRow:
         row = Gtk.ListBoxRow()
         label = Gtk.Label(label=message, xalign=0)
@@ -3362,19 +3235,20 @@ class ManagerApp(Gtk.Application):
             detail = f'{TEXT["target_missing"]} · {location}' if missing else location
             if steam_appid:
                 detail = f"Steam · {detail}"
-            row = SearchRow(app_display_name(app), app.get("name", ""), detail, app["path"], key=app_id)
-            box = self.row_box()
-            box.append(self.app_icon_widget(prefix, app))
-            box.append(self.text_column(app_display_name(app), detail,
-                                        tooltip=app["path"], dim=missing or app_is_uninstaller(app)))
+            display = app_display_name(app)
+            row = Adw.ActionRow(title=display, subtitle=detail)
+            row.set_subtitle_lines(1)
+            row.search_text = " ".join([display, app.get("name", ""), detail, app["path"]]).casefold()
+            row.key = app_id
+            row.add_prefix(self.app_icon_widget(prefix, app))
             log_button = self.compact_button(TEXT["log"])
             log_button.set_sensitive(bool(log_path and log_path.exists()))
             log_button.connect("clicked", lambda _b, item=app, path=log_path: self.show_log_dialog(app_display_name(item), path))
-            box.append(log_button)
+            row.add_suffix(log_button)
             if running_app:
                 close = self.compact_button(TEXT["close"], "menu-item-danger")
                 close.connect("clicked", lambda _b, app_id_value=app_id: self.close_running_app(app_id_value))
-                box.append(close)
+                row.add_suffix(close)
             else:
                 run = self.compact_button(TEXT["run"], "run-button")
                 if steam_appid:
@@ -3385,15 +3259,13 @@ class ManagerApp(Gtk.Application):
                                 self.run_steam_game(appid, item["path"], str(item_prefix)))
                 else:
                     run.connect("clicked", lambda _b, item=app, item_prefix=prefix: self.run_path(item["path"], str(item_prefix), item.get("runner", "")))
-                box.append(run)
+                row.add_suffix(run)
             if app.get("kind") in ("saved-config", "shortcut"):
                 config = self.compact_button(TEXT["reconfigure"])
                 config.connect("clicked", lambda _b, item=app: self.edit_cache_entry(item))
-                box.append(config)
-            box.append(self.app_menu_button(app))
-            row.set_child(box)
+                row.add_suffix(config)
+            row.add_suffix(self.app_menu_button(app))
             self.apps_list.append(row)
-
     def refresh_install_dirs(self, force: bool = False) -> None:
         if not self.install_dirs_list:
             return
@@ -3415,28 +3287,27 @@ class ManagerApp(Gtk.Application):
             return
         for item in dirs:
             path = Path(item["path"])
-            row = SearchRow(str(item.get("name", path.name)), windows_display_path(prefix, path), key=str(path))
-            box = self.row_box()
             detail = " · ".join([
                 windows_display_path(prefix, path),
                 TEXT["exe_count"].format(count=item.get("exe_count", 0)),
                 TEXT["linked_apps"].format(count=item.get("linked_count", 0)),
             ])
-            box.append(self.icon_widget("folder-symbolic"))
-            box.append(self.text_column(str(item.get("name", path.name)), detail))
+            row = Adw.ActionRow(title=str(item.get("name", path.name)), subtitle=detail)
+            row.set_subtitle_lines(1)
+            row.search_text = " ".join([str(item.get("name", path.name)), detail, str(path)]).casefold()
+            row.key = str(path)
+            row.add_prefix(self.icon_widget("folder-symbolic"))
             view = self.compact_button(TEXT["view_exes"], "run-button")
             view.connect("clicked", lambda _b, directory=path, item_prefix=prefix: self.show_install_dir_exes(item_prefix, directory))
-            box.append(view)
+            row.add_suffix(view)
             open_dir = self.compact_button(TEXT["open_dir"])
             open_dir.connect("clicked", lambda _b, directory=path: self.open_folder(directory))
-            box.append(open_dir)
+            row.add_suffix(open_dir)
             delete_dir = self.compact_button(TEXT["delete_dir"], "menu-item-danger")
             delete_dir.add_css_class("destructive-action")
             delete_dir.connect("clicked", lambda _b, directory=path, item_prefix=prefix: self.confirm_delete_install_dir(item_prefix, directory))
-            box.append(delete_dir)
-            row.set_child(box)
+            row.add_suffix(delete_dir)
             self.install_dirs_list.append(row)
-
     def refresh_processes(self) -> None:
         processes = scan_processes(self.page_prefix("processes"))
         view = self.save_list_view(self.process_list)
@@ -3450,21 +3321,19 @@ class ManagerApp(Gtk.Application):
             return
         for proc in processes:
             # not the exe: for every Windows program that is Wine's loader
-            row = SearchRow(proc["name"], proc["pid"], proc["command"], key=str(proc["pid"]))
-            box = self.row_box()
-            title = f"{proc['name']}  PID {proc['pid']}  {proc['age']}"
-            box.append(self.text_column(title, proc["command"]))
-            force = self.compact_button("", "menu-item-danger")
+            row = Adw.ActionRow(title=f"{proc['name']}  PID {proc['pid']}  {proc['age']}",
+                                subtitle=proc["command"])
+            row.set_subtitle_lines(1)
+            row.search_text = " ".join([proc["name"], proc["pid"], proc["command"]]).casefold()
+            row.key = str(proc["pid"])
+            force = self.compact_button("", "menu-item-danger")
             force.add_css_class("icon-button")
             force.set_size_request(34, 34)
-            force.set_valign(Gtk.Align.CENTER)
             force.set_tooltip_text(TEXT["force_kill"])
             force.add_css_class("destructive-action")
             force.connect("clicked", lambda _b, item=proc: self.kill_process(item, True))
-            box.append(force)
-            row.set_child(box)
+            row.add_suffix(force)
             self.process_list.append(row)
-
     def set_status(self, message: str) -> None:
         if self.status_label:
             self.status_label.set_text(message)
