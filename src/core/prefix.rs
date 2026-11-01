@@ -39,9 +39,7 @@ fn add_unique_path(values: &mut Vec<PathBuf>, seen: &mut Vec<String>, path: &Pat
 pub fn collect_prefixes() -> Vec<PathBuf> {
     let mut values = Vec::new();
     let mut seen = Vec::new();
-    values.push(expand_path(
-        &std::env::var("WINRUN_PREFIX").unwrap_or_else(|_| cache_home_default()),
-    ));
+    values.push(crate::core::paths::default_prefix());
     if let Ok(read) = std::fs::read_dir(crate::core::paths::association_dir()) {
         for entry in read.flatten() {
             let path = entry.path();
@@ -67,10 +65,6 @@ pub fn collect_prefixes() -> Vec<PathBuf> {
         result.push(value);
     }
     result
-}
-
-fn cache_home_default() -> String {
-    home().join(".proton").to_string_lossy().into_owned()
 }
 
 pub fn prefix_mtime(path: &Path) -> u64 {

@@ -51,9 +51,7 @@ fn main() {
     // 在前缀的会话里跑一条 Linux 命令，等它结束并沿用它的退出码。
     if let Some(pos) = args.iter().position(|arg| arg == "--exec") {
         let command: Vec<String> = args[pos + 1..].to_vec();
-        let prefix = std::env::var("WINRUN_PREFIX")
-            .map(|value| core::paths::expand_path(&value))
-            .unwrap_or_else(|_| core::paths::home().join(".proton"));
+        let prefix = core::paths::default_prefix();
         std::process::exit(engine::launch::exec_foreground(&prefix, &command));
     }
 

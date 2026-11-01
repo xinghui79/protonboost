@@ -53,6 +53,7 @@ pub mod ffi {
         #[qproperty(bool, update_available)]
         #[qproperty(QString, update_details)]
         #[qproperty(QMap_QString_QVariant, config_entry)]
+        #[qproperty(QString, config_icon)]
         #[qproperty(QList_QVariant, config_runners)]
         #[qproperty(QList_QVariant, config_resolutions)]
         #[qproperty(QList_QVariant, config_fps)]
@@ -190,6 +191,7 @@ pub struct BackendRust {
     update_details: QString,
     netns: bool,
     config_entry: QMap_QString_QVariant,
+    config_icon: QString,
     config_runners: QList_QVariant,
     config_resolutions: QList_QVariant,
     config_fps: QList_QVariant,
@@ -911,6 +913,26 @@ impl ffi::Backend {
         put(&mut map, "steamAppid", &entry.steam_appid);
         put(&mut map, "source", &entry.source);
         put(&mut map, "displayName", &entry.name);
+
+        // 配置弹层顶部用程序自己的图标；取不到时 QML 退回首字母
+        let icon = if entry.exe.is_empty() {
+            String::new()
+        } else {
+            let app = AppEntry {
+                path: entry.exe.clone(),
+                name: if entry.name.is_empty() {
+                    scan::inferred_exe_name(std::path::Path::new(&entry.exe), None)
+                } else {
+                    entry.name.clone()
+                },
+                kind: "saved-config".into(),
+                ..Default::default()
+            };
+            let found = icons::icon_for_app_quick(&expand_path(&entry.prefix), &app);
+            if found == "winrun" { String::new() } else { found }
+        };
+        self.as_mut().set_config_icon(QString::from(icon));
+
         self.as_mut().set_config_entry(map);
         self.as_mut().set_config_runners(runner_list);
         self.as_mut().set_config_resolutions(resolutions);
@@ -1179,11 +1201,7 @@ impl ffi::Backend {
 
     pub fn configure_exe(mut self: Pin<&mut Self>, exe: &QString) {
         let exe_str = exe.to_string();
-        let prefix_path = expand_path(
-            &std::env::var("WINRUN_PREFIX").unwrap_or_else(|_| {
-                crate::core::paths::home().join(".proton").to_string_lossy().into_owned()
-            }),
-        );
+        let prefix_path = crate::core::paths::default_prefix();
         // 桌面入口给的是 Linux 路径；也接受 C:\... 这样的 Windows 路径
         let looks_windows = exe_str.contains('\\') || exe_str.chars().nth(1) == Some(':');
         let exe_path = if looks_windows {

@@ -12,6 +12,25 @@ pub fn xdg(var: &str, fallback: &str) -> PathBuf {
     }
 }
 
+/// 默认前缀。
+///
+/// 新用户放在 `~/.local/share/winrun/proton`（XDG，文件管理器里看得见）；
+/// 老的 `~/.proton` 只要还在就继续用它——不搬用户的数据。
+/// `WINRUN_PREFIX` 环境变量优先级最高。
+pub fn default_prefix() -> PathBuf {
+    if let Ok(value) = std::env::var("WINRUN_PREFIX") {
+        let value = value.trim();
+        if !value.is_empty() {
+            return expand_path(value);
+        }
+    }
+    let legacy = home().join(".proton");
+    if legacy.is_dir() {
+        return legacy;
+    }
+    data_home().join("winrun/proton")
+}
+
 pub fn cache_home() -> PathBuf {
     xdg("XDG_CACHE_HOME", ".cache")
 }

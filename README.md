@@ -8,8 +8,11 @@
 
 ## 功能
 
-- **开箱即用**：把一个 exe 拖给 WinRun，它在 `~/.proton` 里建好前缀就跑；第一次会自动初始化。
+- **开箱即用**：把一个 exe 拖给 WinRun，它在默认前缀里建好环境就跑；第一次会自动初始化。
 - **前缀与运行器**：自动发现 Steam、Lutris、本地目录里的 Proton / Wine，逐个程序选运行器。
+  默认前缀是 `~/.local/share/winrun/proton`；老的 `~/.proton` 只要还在就继续沿用，
+  不搬家。里面 `pfx/drive_c` 就是 Wine 的 C 盘（`windows`、`Program Files`、`users` 都在），
+  由 Wine 首次初始化时创建，这一层不能改名——Proton 约定它就是 `WINEPREFIX`。
 - **独立网络**：前缀默认关在单独的 network namespace 里（`pasta`），加速器和游戏共享同一个
   出口；关掉就回到宿主网络。
 - **会话共享**：同一前缀里的程序共用一个 wineserver，显示方式与网络保持一致。
@@ -41,7 +44,7 @@ winrun-manager --configure 程序.exe   # 只打开某个程序的运行设置
 winrun-manager --run 程序.exe         # 按保存的配置直接启动
 winrun-manager --exec <命令>          # 在前缀会话里跑一条命令（Steam 启动选项）
 winrun-manager --list-runner          # 列出发现的 Proton / Wine
-winrun-manager --dump-scan ~/.proton  # 打印前缀扫描结果，排查界面为什么空
+winrun-manager --dump-scan            # 打印前缀扫描结果，排查界面为什么空
 ```
 
 - **右键 exe**：文件关联给了「运行 Windows 软件」和「设置运行环境」两个动作。
@@ -62,7 +65,7 @@ winrun-manager --dump-scan ~/.proton  # 打印前缀扫描结果，排查界面�
 
 | 位置 | 内容 |
 | --- | --- |
-| `~/.proton` | 默认前缀（可以在设置里换成别的） |
+| `~/.local/share/winrun/proton` | 默认前缀（老的 `~/.proton` 会自动沿用；可在运行设置里换成别的） |
 | `~/.cache/winrun/associations` | 每个程序的运行设置 |
 | `~/.cache/winrun/logs` | 运行日志与会话日志 |
 | `~/.cache/winrun/icons` | 从 exe/ico 里抠出来的图标 |
@@ -81,6 +84,10 @@ winrun-manager --dump-scan ~/.proton  # 打印前缀扫描结果，排查界面�
 cargo build            # 调试版 → target/debug/winrun-manager
 cargo build --release  # 发布版
 ```
+
+`target/` 是 Cargo 的构建缓存（不是项目结构）：`deps/` 放编译好的依赖，`build/<crate>-<hash>/out`
+是各依赖构建脚本的产物，`incremental/` 是增量缓存。删掉无妨，下次构建会重新生成；
+积得太大（调试版通常 1–2 GB）直接 `cargo clean` 即可。这个目录已在 `.gitignore` 里。
 
 ## 代码结构
 

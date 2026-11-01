@@ -810,7 +810,7 @@ pub fn app_cache_files(prefix: &Path, app: &AppEntry) -> Vec<PathBuf> {
             if data
                 .get("prefix")
                 .map(|p| expand_path(p) == expand_path(&prefix.to_string_lossy()))
-                .unwrap_or_else(|| expand_path(&home().join(".proton").to_string_lossy()) == expand_path(&prefix.to_string_lossy()))
+                .unwrap_or_else(|| crate::core::paths::default_prefix() == expand_path(&prefix.to_string_lossy()))
             {
                 continue;
             }

@@ -209,6 +209,16 @@ fn icon_candidates_near(path: &Path) -> Vec<PathBuf> {
 
 /// 应用的图标：快捷方式指向的 exe、周边文件、安装器缓存里同名图标
 pub fn icon_for_app(prefix: &Path, app: &AppEntry, target_dir: Option<&Path>) -> String {
+    resolve_icon(prefix, app, target_dir, true)
+}
+
+/// 只要「缓存命中或能就地提取」的图标，不去扫安装器目录。
+/// 配置弹层在主线程调用，深扫（几千个文件）会把界面卡住。
+pub fn icon_for_app_quick(prefix: &Path, app: &AppEntry) -> String {
+    resolve_icon(prefix, app, None, false)
+}
+
+fn resolve_icon(prefix: &Path, app: &AppEntry, target_dir: Option<&Path>, deep: bool) -> String {
     let path = PathBuf::from(&app.path);
     let prefix = expand_path(&prefix.to_string_lossy());
     let mut extracted: Option<PathBuf> = None;
@@ -243,12 +253,14 @@ pub fn icon_for_app(prefix: &Path, app: &AppEntry, target_dir: Option<&Path>) ->
             return candidate.to_string_lossy().into_owned();
         }
     }
-    for root in [
-        prefix.join("pfx/drive_c/windows/Installer"),
-        prefix.join("pfx/drive_c/ProgramData"),
-    ] {
-        if let Some(icon) = search_icon_tree(&root, &app.name, 3000) {
-            return icon.to_string_lossy().into_owned();
+    if deep {
+        for root in [
+            prefix.join("pfx/drive_c/windows/Installer"),
+            prefix.join("pfx/drive_c/ProgramData"),
+        ] {
+            if let Some(icon) = search_icon_tree(&root, &app.name, 3000) {
+                return icon.to_string_lossy().into_owned();
+            }
         }
     }
     "winrun".into()

@@ -726,10 +726,16 @@ ApplicationWindow {
                         }
                         ToolTip.visible: hovered
                         ToolTip.delay: 700
-                        ToolTip.text: modelData.path
+                        ToolTip.text: modelData.path + "\n" + (root.zh ? "右键打开这个前缀的 drive_c"
+                                                                      : "Right-click to open its drive_c")
                         onClicked: {
                             root.setPrefix(modelData.path)
                             root.refreshCurrent()
+                        }
+                        // 右键：直接在文件管理器里打开前缀（里面 pfx/drive_c 就是 C 盘）
+                        TapHandler {
+                            acceptedButtons: Qt.RightButton
+                            onTapped: backend.open_folder(modelData.path)
                         }
                     }
                 }
@@ -2175,7 +2181,7 @@ ApplicationWindow {
         readonly property real available: root.height - 48
         x: Math.round((root.width - width) / 2)
         y: Math.max(8, Math.round((available - height) / 2))
-        height: Math.min(root.configureMode ? 712 : 720, available - 12)
+        height: Math.min(root.configureMode ? 724 : 720, available - 8)
         padding: 0
         background: Rectangle { radius: 14; color: c.row; border.width: 1; border.color: c.line }
 
@@ -2238,17 +2244,30 @@ ApplicationWindow {
                     anchors.rightMargin: 12
                     spacing: 12
 
+                    // 程序自己的图标；提不出来才退回首字母
                     Rectangle {
-                        Layout.preferredWidth: 34
-                        Layout.preferredHeight: 34
-                        radius: 9
+                        Layout.preferredWidth: 40
+                        Layout.preferredHeight: 40
+                        radius: 10
                         color: c.accentSoft
+                        clip: true
                         Text {
                             anchors.centerIn: parent
+                            visible: cfgIcon.status !== Image.Ready
                             text: (cfg.name || cfg.exe || "?").replace(/^.*[\\/]/, "").charAt(0).toUpperCase()
-                            font.pixelSize: 15
+                            font.pixelSize: 17
                             font.weight: Font.DemiBold
                             color: c.accent
+                        }
+                        Image {
+                            id: cfgIcon
+                            anchors.fill: parent
+                            anchors.margins: 4
+                            source: backend.config_icon ? "file://" + backend.config_icon : ""
+                            fillMode: Image.PreserveAspectFit
+                            smooth: true
+                            mipmap: true
+                            visible: status === Image.Ready
                         }
                     }
 
@@ -2285,19 +2304,20 @@ ApplicationWindow {
                 implicitHeight: 200
 
                 Flickable {
+                id: cfgFlick
                 anchors.fill: parent
                 clip: true
                 contentWidth: width
-                contentHeight: formCol.implicitHeight + 32
+                contentHeight: formCol.implicitHeight + 28
                 boundsBehavior: Flickable.StopAtBounds
                 ScrollBar.vertical: ScrollBar {}
 
                 ColumnLayout {
                     id: formCol
                     x: 20
-                    y: 16
+                    y: 12
                     width: parent.width - 40
-                    spacing: 14
+                    spacing: 12
 
                     SettingsCard {
                         title: root.zh ? "常规" : "GENERAL"
@@ -2488,6 +2508,18 @@ ApplicationWindow {
                         }
                     }
                 }
+                }
+
+                Rectangle {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    height: 34
+                    visible: cfgFlick.contentY + cfgFlick.height < cfgFlick.contentHeight - 4
+                    gradient: Gradient {
+                        GradientStop { position: 0.0; color: "transparent" }
+                        GradientStop { position: 1.0; color: c.row }
+                    }
                 }
             }
 
