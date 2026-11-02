@@ -75,6 +75,12 @@ ApplicationWindow {
     property string currentLogAppId: ""
     property string logTitle: ""
     property var searchValues: ["", "", ""]
+
+    function commitSearch(text, page) {
+        var copy = searchValues.slice()
+        copy[page] = text
+        searchValues = copy
+    }
     /// 自增一次 = 请求当前页把焦点交给搜索框（组件内部 id 外面看不见，只能这样通知）
     property int searchFocusTick: 0
 
@@ -990,12 +996,15 @@ ApplicationWindow {
             implicitHeight: 32
             placeholderText: root.searchHints[toolbar.page]
             text: root.searchValues[toolbar.page]
-            onTextEdited: {
-                var copy = root.searchValues.slice()
-                copy[toolbar.page] = text
-                root.searchValues = copy
-            }
+            onTextEdited: searchDebounce.restart()
             onAccepted: toolbar.submitted()
+
+            // 输入防抖：150ms 内的连续击键只触发一次列表重建
+            Timer {
+                id: searchDebounce
+                interval: 150
+                onTriggered: root.commitSearch(pageSearchField.text, toolbar.page)
+            }
         }
         Connections {
             target: root

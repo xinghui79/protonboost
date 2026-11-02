@@ -92,44 +92,89 @@ pub fn scan_processes(prefix: &Path) -> Vec<ProcEntry> {
         return result;
     };
     let my_pid = std::process::id() as i32;
-    for entry in read.flatten() {
-        let name = entry.file_name().to_string_lossy().into_owned();
-        let Ok(pid) = name.parse::<i32>() else {
-            continue;
-        };
-        if pid == my_pid {
-            continue;
+    let mut pids: Vec<i32> = read
+        .flatten()
+        .filter_map(|entry| entry.file_name().to_string_lossy().parse::<i32>().ok())
+        .filter(|pid| *pid != my_pid)
+        .collect();
+    pids.sort_unstable();
+
+    // 并行扫描：每个进程要读 environ/cmdline/exe/comm 多次 IO，
+    // UU + Steam 运行时系统进程几百个，串行是刷新延迟的大头。
+    // 分 8 块用 scoped thread 并行，块内结果合并后统一排序。
+    let result = if pids.len() < 32 {
+        for pid in &pids {
+            if let Some(entry) = scan_one(*pid, &wineprefixes, &steam_data) {
+                result.push(entry);
+            }
         }
-        let env = process_env(pid);
-        let matched = wineprefixes.iter().any(|p| env.get("WINEPREFIX").is_some_and(|v| v == p))
-            || env.get("STEAM_COMPAT_DATA_PATH").is_some_and(|v| *v == steam_data)
-            || env.get("PROTONBOOST_PREFIX").is_some_and(|v| *v == steam_data);
-        if !matched {
-            continue;
-        }
-        let command = std::fs::read(format!("/proc/{pid}/cmdline"))
-            .map(|bytes| String::from_utf8_lossy(&bytes).replace('\0', " ").trim().to_string())
-            .unwrap_or_default();
-        let comm = std::fs::read_to_string(format!("/proc/{pid}/comm"))
-            .map(|text| text.trim().to_string())
-            .unwrap_or_default();
-        let exe = std::fs::read_link(format!("/proc/{pid}/exe"))
-            .map(|p| p.to_string_lossy().into_owned())
-            .unwrap_or_default();
-        result.push(ProcEntry {
-            pid,
-            ppid: process_parent(pid),
-            exe,
-            name: comm.clone(),
-            command: if command.is_empty() { comm } else { command },
-            age: process_start_time(pid),
-            app_id: env.get("PROTONBOOST_APP_ID").cloned().unwrap_or_default(),
-            app_path: env.get("PROTONBOOST_APP_PATH").cloned().unwrap_or_default(),
-            log: env.get("PROTONBOOST_LOG").cloned().unwrap_or_default(),
+        result
+    } else {
+        let chunk_size = pids.len().div_ceil(8);
+        let chunks: Vec<&[i32]> = pids.chunks(chunk_size).collect();
+        let merged = std::thread::scope(|scope| {
+            let mut handles = Vec::new();
+            for chunk in chunks {
+                // 引用是 Copy，显式重绑定后 move 进子线程
+                let wp: &[String] = &wineprefixes;
+                let sd: &str = &steam_data;
+                let chunk: &[i32] = chunk;
+                handles.push(scope.spawn(move || {
+                    let mut out = Vec::new();
+                    for pid in chunk {
+                        if let Some(entry) = scan_one(*pid, wp, sd) {
+                            out.push(entry);
+                        }
+                    }
+                    out
+                }));
+            }
+            handles
+                .into_iter()
+                .flat_map(|handle| handle.join().unwrap_or_default())
+                .collect::<Vec<ProcEntry>>()
         });
-    }
+        merged
+    };
+
+    let mut result = result;
     result.sort_by_key(|proc| proc.pid);
     result
+}
+
+/// 扫描单个进程：是否属于该前缀，是则返回条目
+fn scan_one(
+    pid: i32,
+    wineprefixes: &[String],
+    steam_data: &str,
+) -> Option<ProcEntry> {
+    let env = process_env(pid);
+    let matched = wineprefixes.iter().any(|p| env.get("WINEPREFIX").is_some_and(|v| v == p))
+        || env.get("STEAM_COMPAT_DATA_PATH").is_some_and(|v| *v == steam_data)
+        || env.get("PROTONBOOST_PREFIX").is_some_and(|v| *v == steam_data);
+    if !matched {
+        return None;
+    }
+    let command = std::fs::read(format!("/proc/{pid}/cmdline"))
+        .map(|bytes| String::from_utf8_lossy(&bytes).replace('\0', " ").trim().to_string())
+        .unwrap_or_default();
+    let comm = std::fs::read_to_string(format!("/proc/{pid}/comm"))
+        .map(|text| text.trim().to_string())
+        .unwrap_or_default();
+    let exe = std::fs::read_link(format!("/proc/{pid}/exe"))
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    Some(ProcEntry {
+        pid,
+        ppid: process_parent(pid),
+        exe,
+        name: comm.clone(),
+        command: if command.is_empty() { comm } else { command },
+        age: process_start_time(pid),
+        app_id: env.get("PROTONBOOST_APP_ID").cloned().unwrap_or_default(),
+        app_path: env.get("PROTONBOOST_APP_PATH").cloned().unwrap_or_default(),
+        log: env.get("PROTONBOOST_LOG").cloned().unwrap_or_default(),
+    })
 }
 
 /// 会话主进程的启动链：Steam runtime 领养了 wineserver，不能跟着程序一起结束
