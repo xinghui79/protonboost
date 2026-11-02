@@ -90,38 +90,36 @@ optdepend = passt: 前缀的独立网络（netns）
 optdepend = wine: 没有 Proton 时也可以用它跑程序
 optdepend = icoextract: 从 exe 里抠图标的备用方案
 EOF
-    # .MTREE：pacman 用来校验包内容，格式为「路径 time= size= sha256digest=」
-    ( cd "$TREE" && python3 - "$VERSION" <<'PYEOF'
-import hashlib, os, sys, time
+    # .MTREE：pacman 用来校验包内容。目录必须显式 type=dir，否则继承
+    # /set type=file，pacman 会把目录当成包文件、与文件系统报冲突
+    ( cd "$TREE" && python3 - <<'PYEOF'
+import hashlib, os
 
-tree = "."
 lines = ["#mtree", "/set type=file uid=0 gid=0 mode=644"]
 
-def add(path, is_dir, mode=None):
+def add(path):
     st = os.stat(path)
-    digest = ""
-    if not is_dir:
-        h = hashlib.sha256()
-        with open(path, "rb") as f:
-            for chunk in iter(lambda: f.read(1 << 20), b""):
-                h.update(chunk)
-        digest = f" sha256digest={h.hexdigest()}"
-    entry = f"./{path} time={int(st.st_mtime)} size={st.st_size}{digest}"
-    if mode:
-        entry += f" mode={mode}"
+    if os.path.isdir(path):
+        lines.append(f"./{path} type=dir time={int(st.st_mtime)} mode=755")
+        return
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    entry = f"./{path} time={int(st.st_mtime)} size={st.st_size} sha256digest={h.hexdigest()}"
+    if os.access(path, os.X_OK):
+        entry += " mode=755"
     lines.append(entry)
 
-for root, dirs, files in os.walk(tree):
+for root, dirs, files in os.walk("."):
     dirs.sort()
-    rel = os.path.relpath(root, tree)
-    if rel != ".":
-        add(rel, True)
+    for name in sorted(dirs):
+        add(os.path.normpath(os.path.join(root, name)))
     for name in sorted(files):
-        path = os.path.join(rel, name) if rel != "." else name
+        path = os.path.normpath(os.path.join(root, name))
         if path == ".MTREE":
             continue
-        mode = "755" if os.access(path, os.X_OK) else None
-        add(path, False, mode)
+        add(path)
 print("\n".join(lines))
 PYEOF
     ) > "$TREE/.MTREE"
