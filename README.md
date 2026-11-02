@@ -43,6 +43,16 @@ git clone <repo> && cd protonboost
 PROTONBOOST_NO_BUILD=1 ./install.sh
 ```
 
+### Arch 用户一行安装（从 GitHub Release）
+
+```bash
+curl -LO https://github.com/xinghui79/protonboost/releases/latest/download/protonboost-0.1.0-1-x86_64.pkg.tar.zst \
+  && sudo pacman -U protonboost-0.1.0-1-x86_64.pkg.tar.zst
+```
+
+Debian/Ubuntu 用户同样可以从 Release 下载 `protonboost_*_amd64.deb` 后
+`sudo apt install ./protonboost_*_amd64.deb`。
+
 构建需要 Qt 6 的开发文件（脚本会先检查，缺了会给出各发行版的包名）；
 只安装现成二进制则不需要。
 
