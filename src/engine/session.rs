@@ -18,7 +18,7 @@ static STOP: AtomicBool = AtomicBool::new(false);
 
 pub fn runtime_root() -> PathBuf {
     let runtime = std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| "/tmp".into());
-    Path::new(&runtime).join("winrun/sessions")
+    Path::new(&runtime).join("protonboost/sessions")
 }
 
 /// 每个前缀一个会话目录（前缀路径的哈希）
@@ -145,9 +145,9 @@ pub fn prefix_netns_enabled(prefix: &Path) -> bool {
     crate::core::prefix::netns_enabled(prefix)
 }
 
-/// 写前缀自己的网络开关（`$PREFIX/.winrun.conf`）
+/// 写前缀自己的网络开关（`$PREFIX/.protonboost.conf`）
 pub fn set_prefix_netns(prefix: &Path, enabled: bool) {
-    let file = prefix.join(".winrun.conf");
+    let file = prefix.join(".protonboost.conf");
     let existing = std::fs::read_to_string(&file).unwrap_or_default();
     let mut lines: Vec<String> = existing
         .lines()
@@ -319,7 +319,7 @@ fn start_keeper(dir: &Path, prefix: &Path) -> Result<u32, SessionError> {
     }
 
     let log_path = cache_home()
-        .join("winrun/logs")
+        .join("protonboost/logs")
         .join(format!("session-{}.log", dir.file_name().and_then(|n| n.to_str()).unwrap_or("x")));
     let _ = std::fs::create_dir_all(log_path.parent().unwrap_or(Path::new("/tmp")));
     let log = std::fs::OpenOptions::new()
@@ -329,7 +329,7 @@ fn start_keeper(dir: &Path, prefix: &Path) -> Result<u32, SessionError> {
         .ok();
 
     let mac = namespace_mac_address();
-    let self_exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("winrun-manager"));
+    let self_exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("protonboost"));
     let no_pidns = Command::new("pasta")
         .arg("--help")
         .output()
@@ -352,10 +352,10 @@ fn start_keeper(dir: &Path, prefix: &Path) -> Result<u32, SessionError> {
         .arg(&self_exe)
         .arg(KEEPER_FLAG)
         .arg(dir)
-        .env("WINRUN_PREFIX", prefix)
-        .env_remove("WINRUN_APP_ID")
-        .env_remove("WINRUN_APP_PATH")
-        .env_remove("WINRUN_LOG")
+        .env("PROTONBOOST_PREFIX", prefix)
+        .env_remove("PROTONBOOST_APP_ID")
+        .env_remove("PROTONBOOST_APP_PATH")
+        .env_remove("PROTONBOOST_LOG")
         .env_remove("LD_PRELOAD")
         .stdin(Stdio::null());
 
@@ -543,7 +543,7 @@ fn unlock(file: std::fs::File) {
 /// keeper 主体：写会话标记，然后等这个命名空间里没人了再收摊
 pub fn keeper_main(dir: &Path) -> ! {
     install_signal_handlers();
-    let prefix = PathBuf::from(std::env::var("WINRUN_PREFIX").unwrap_or_default());
+    let prefix = PathBuf::from(std::env::var("PROTONBOOST_PREFIX").unwrap_or_default());
     let Ok(netns) = std::fs::read_link("/proc/self/ns/net") else {
         std::process::exit(1);
     };

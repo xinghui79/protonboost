@@ -25,7 +25,7 @@ fn main() {
             bytes.hash(&mut hasher);
         }
     }
-    println!("cargo:rustc-env=WINRUN_QML_STAMP={:x}", hasher.finish());
+    println!("cargo:rustc-env=PROTONBOOST_QML_STAMP={:x}", hasher.finish());
 
     // 覆盖层 uid 辅助库：构建期编译成 .so 嵌进二进制，用户机器上就不再需要 C
     // 编译器。构建机上没有 cc 时写入空占位，运行时检测到不是有效 ELF 会回退
@@ -50,7 +50,7 @@ fn main() {
         }
     }
 
-    let qml = QmlModule::new("WinRun").qml_file("qml/Main.qml");
+    let qml = QmlModule::new("ProtonBoost").qml_file("qml/Main.qml");
 
     CxxQtBuilder::new_qml_module(qml)
         .file("src/app/bridge.rs")

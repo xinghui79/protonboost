@@ -25,7 +25,7 @@ type QVariantMap = QMap_QString_QVariant;
 const COMMON_RESOLUTIONS: &[&str] = &["1280x720", "1600x900", "1920x1080", "2560x1440", "3840x2160"];
 const COMMON_FPS: &[&str] = &["30", "40", "45", "60", "90", "120", "144", "165", "240"];
 
-#[cxx_qt::bridge(namespace = "winrun")]
+#[cxx_qt::bridge(namespace = "protonboost")]
 pub mod ffi {
     #[namespace = ""]
     unsafe extern "C++" {
@@ -277,7 +277,7 @@ fn spawn_detached(command: &mut std::process::Command) -> Result<(), String> {
 
 /// 管理器自己的可执行文件：导出的桌面入口指向它
 fn manager_path() -> PathBuf {
-    std::env::current_exe().unwrap_or_else(|_| PathBuf::from("winrun-manager"))
+    std::env::current_exe().unwrap_or_else(|_| PathBuf::from("protonboost"))
 }
 
 /// 简易 shlex：支持单双引号的命令拆分
@@ -355,7 +355,7 @@ impl ffi::Backend {
                                     ("name", qvar_str(&row.display_name)),
                                     ("detail", qvar_str(&row.detail)),
                                     ("meta", qvar_str(&row.meta)),
-                                    ("icon", qvar_str(if row.icon.is_empty() { "winrun" } else { &row.icon })),
+                                    ("icon", qvar_str(if row.icon.is_empty() { "protonboost" } else { &row.icon })),
                                     ("running", qvar_bool(row.running)),
                                     ("hasLog", qvar_bool(row.has_log)),
                                     ("canConfig", qvar_bool(row.can_config)),
@@ -372,7 +372,7 @@ impl ffi::Backend {
                     self.as_mut().set_apps(list);
                 }
                 jobs::ResultMsg::Icon { req, app_id, icon } => {
-                    if req != self.as_mut().rust_mut().req_apps || icon == "winrun" {
+                    if req != self.as_mut().rust_mut().req_apps || icon == "protonboost" {
                         continue;
                     }
                     // 把解析出的图标写回应用列表
@@ -651,7 +651,7 @@ impl ffi::Backend {
         self.as_mut().set_netns(netns);
     }
 
-    /// 状态栏那个「独立网络」开关：直接改前缀的 .winrun.conf
+    /// 状态栏那个「独立网络」开关：直接改前缀的 .protonboost.conf
     pub fn set_prefix_netns(mut self: Pin<&mut Self>, prefix: &QString, enabled: bool) {
         let path = expand_path(&prefix.to_string());
         if path.as_os_str().is_empty() {
@@ -964,7 +964,7 @@ impl ffi::Backend {
                 ..Default::default()
             };
             let found = icons::icon_for_app_quick(&expand_path(&entry.prefix), &app);
-            if found == "winrun" { String::new() } else { found }
+            if found == "protonboost" { String::new() } else { found }
         };
         self.as_mut().set_config_icon(QString::from(icon));
 
@@ -1266,7 +1266,7 @@ impl ffi::Backend {
 
     pub fn initial_page(self: Pin<&mut Self>) -> QString {
         let valid = ["apps", "linux", "procs"];
-        let page = std::env::var("WINRUN_PAGE").unwrap_or_else(|_| "apps".into());
+        let page = std::env::var("PROTONBOOST_PAGE").unwrap_or_else(|_| "apps".into());
         let page = page.rsplit('=').next().unwrap_or("apps").to_string();
         if valid.contains(&page.as_str()) {
             QString::from(page)

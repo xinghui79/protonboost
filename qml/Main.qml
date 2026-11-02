@@ -1,11 +1,11 @@
-// WinRun 管理器 —— 界面
+// ProtonBoost 管理器 —— 界面
 // 版式参考 macOS 设置：侧栏（前缀 + 视图）+ 大标题 + 分组列表 + 右侧检查器
 // 修改本文件后直接 cargo build 即可，build.rs 会保证重新链接
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Dialogs
-import WinRun
+import ProtonBoost
 
 ApplicationWindow {
     id: root
@@ -39,7 +39,7 @@ ApplicationWindow {
     readonly property bool configureMode: backend.startup_exe() !== ""
 
     // ── 文案 ────────────────────────────────────────────────
-    readonly property string appName: "WinRun"
+    readonly property string appName: "ProtonBoost"
     readonly property string version: "v" + Qt.application.version
     readonly property var pageNames: [zh ? "应用" : "Apps", zh ? "Linux 程序" : "Linux Apps",
                                       zh ? "进程" : "Processes"]
@@ -781,7 +781,7 @@ ApplicationWindow {
                                 verticalAlignment: Text.AlignVCenter
                             }
 
-                            // 当前前缀的独立网络开关（改 .winrun.conf，下次启动生效）
+                            // 当前前缀的独立网络开关（改 .protonboost.conf，下次启动生效）
                             Item {
                                 id: netToggle
                                 visible: prefBtn.active
@@ -1416,7 +1416,7 @@ ApplicationWindow {
                                 spacing: 12
 
                                 AppIcon {
-                                    source: modelData.icon && modelData.icon !== "winrun" ? modelData.icon : ""
+                                    source: modelData.icon && modelData.icon !== "protonboost" ? modelData.icon : ""
                                 }
 
                                 ColumnLayout {
@@ -1571,7 +1571,7 @@ ApplicationWindow {
                 spacing: 12
                 AppIcon {
                     size: 52
-                    source: pane.app && pane.app.icon && pane.app.icon !== "winrun" ? pane.app.icon : ""
+                    source: pane.app && pane.app.icon && pane.app.icon !== "protonboost" ? pane.app.icon : ""
                 }
                 ColumnLayout {
                     Layout.fillWidth: true

@@ -1,6 +1,6 @@
 # 设计来源与差异说明
 
-WinRun 的灵感来自 [SHORiN-KiWATA/proton-wrapper](https://github.com/SHORiN-KiWATA/proton-wrapper)
+ProtonBoost 的灵感来自 [SHORiN-KiWATA/proton-wrapper](https://github.com/SHORiN-KiWATA/proton-wrapper)
 （原名 shorin-proton-wrapper）。那份项目是 Bash + Python + GTK4，本项目是 Rust + Qt 6 (QML)，
 两者定位相同：让 Windows 程序在 Linux 上「双击就能跑」，并把游戏加速器与游戏放进同一个
 网络命名空间里。
@@ -69,7 +69,7 @@ Steam 展开 `%command%` 后是：Steam 自己的运行器前缀 + `proton` + �
 | 方面 | 原版 | 本项目 |
 | --- | --- | --- |
 | 实现语言 | Bash + Python + GTK4 | Rust + Qt 6 (cxx-qt + QML) |
-| 前缀默认值 | `~/.proton` | `~/.local/share/winrun/proton`（老的 `~/.proton` 仍在就沿用） |
+| 前缀默认值 | `~/.proton` | `~/.local/share/protonboost/proton`（老的 `~/.proton` 仍在就沿用） |
 | 界面 | GTK4，三页 | QML，侧栏 + 三个视图 + 右侧检查器 |
 | 运行器更新 | 三个产品（GE / DW / WE） | GE / DW（WE 是本地维护版，无在线安装） |
 | 覆盖层辅助库 | Bash 里内嵌 C 源码 | `src/engine/overlay.rs`，同样现场编译 |
@@ -81,7 +81,7 @@ Steam 展开 `%command%` 后是：Steam 自己的运行器前缀 + `proton` + �
 
 - **前缀路径**：默认落在 XDG 数据目录，文件管理器里看得见；老路径不搬数据
 - **检查器**：点一行在右侧展开，显示路径（Windows 视角）、运行器、最近日志
-- **独立网络开关**：侧栏前缀行右侧的小开关直接改 `.winrun.conf`
+- **独立网络开关**：侧栏前缀行右侧的小开关直接改 `.protonboost.conf`
 - **`--doctor`**：一次列清缺什么命令、运行器在哪、前缀状态、真实 uid
 - **降级策略**：独立网络起不来时退回宿主网络并说明原因，而不是拒绝启动
 - **快捷方式解析**：`.lnk` 自动解析成真正的 exe（Proton 不认识 `.lnk`）

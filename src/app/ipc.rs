@@ -5,7 +5,7 @@ use std::sync::mpsc::Sender;
 
 pub fn socket_path() -> std::path::PathBuf {
     let runtime = std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| "/tmp".into());
-    std::path::Path::new(&runtime).join("winrun-manager.sock")
+    std::path::Path::new(&runtime).join("protonboost.sock")
 }
 
 /// 尝试通知已运行的实例；true = 已通知，本进程应退出

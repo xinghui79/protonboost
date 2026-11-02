@@ -1,4 +1,4 @@
-# WinRun
+# ProtonBoost
 
 在 Linux 上跑 Windows 程序的小工具：Proton / Wine 打底，图形管理器管前缀、程序、进程，
 还能把加速器和游戏放进同一个独立网络里。整套实现是 Rust + Qt 6（cxx-qt + QML），
@@ -8,9 +8,9 @@
 
 ## 功能
 
-- **开箱即用**：把一个 exe 拖给 WinRun，它在默认前缀里建好环境就跑；第一次会自动初始化。
+- **开箱即用**：把一个 exe 拖给 ProtonBoost，它在默认前缀里建好环境就跑；第一次会自动初始化。
 - **前缀与运行器**：自动发现 Steam、Lutris、本地目录里的 Proton / Wine，逐个程序选运行器。
-  默认前缀是 `~/.local/share/winrun/proton`；老的 `~/.proton` 只要还在就继续沿用，
+  默认前缀是 `~/.local/share/protonboost/proton`；老的 `~/.proton` 只要还在就继续沿用，
   不搬家。里面 `pfx/drive_c` 就是 Wine 的 C 盘（`windows`、`Program Files`、`users` 都在），
   由 Wine 首次初始化时创建，这一层不能改名——Proton 约定它就是 `WINEPREFIX`。
 - **独立网络**：前缀默认关在单独的 network namespace 里（`pasta`），加速器和游戏共享同一个
@@ -31,20 +31,20 @@
 ## 安装
 
 ```bash
-git clone <repo> && cd winrun
+git clone <repo> && cd protonboost
 ./install.sh                 # 构建 release 并安装到 ~/.local
 ./install.sh install ~/.opt  # 自定义 PREFIX
 ./install.sh uninstall       # 按安装记录卸载
 ./install.sh help            # 用法
 
 # 已经编过 release、只想重新装一遍文件
-WINRUN_NO_BUILD=1 ./install.sh
+PROTONBOOST_NO_BUILD=1 ./install.sh
 ```
 
 构建需要 Qt 6 的开发文件（脚本会先检查，缺了会给出各发行版的包名）；
 只安装现成二进制则不需要。
 
-安装脚本会记下装了哪些文件（`$PREFIX/share/winrun/installed-files.txt`），
+安装脚本会记下装了哪些文件（`$PREFIX/share/protonboost/installed-files.txt`），
 卸载照着删，不会漏也不会顺手删掉别的东西。
 
 **为什么不发 Flatpak / AppImage**：这个工具要调用宿主上的 Proton（pressure-vessel
@@ -55,13 +55,13 @@ WINRUN_NO_BUILD=1 ./install.sh
 ## 使用
 
 ```bash
-winrun-manager                        # 图形管理器
-winrun-manager --configure 程序.exe   # 只打开某个程序的运行设置
-winrun-manager --run 程序.exe         # 按保存的配置直接启动
-winrun-manager --exec <命令>          # 在前缀会话里跑一条命令（Steam 启动选项）
-winrun-manager --list-runner          # 列出发现的 Proton / Wine
-winrun-manager --dump-scan            # 打印前缀扫描结果，排查界面为什么空
-winrun-manager --doctor               # 环境诊断：缺什么命令、运行器在哪、前缀状态
+protonboost                        # 图形管理器
+protonboost --configure 程序.exe   # 只打开某个程序的运行设置
+protonboost --run 程序.exe         # 按保存的配置直接启动
+protonboost --exec <命令>          # 在前缀会话里跑一条命令（Steam 启动选项）
+protonboost --list-runner          # 列出发现的 Proton / Wine
+protonboost --dump-scan            # 打印前缀扫描结果，排查界面为什么空
+protonboost --doctor               # 环境诊断：缺什么命令、运行器在哪、前缀状态
 ```
 
 - **右键 exe**：装好之后（`./install.sh`），文件管理器里右键任意 exe 有「运行Windows软件」
@@ -69,7 +69,7 @@ winrun-manager --doctor               # 环境诊断：缺什么命令、运行�
 - **装 Windows 软件**：下载来的安装包（setup.exe 之类）用上面那个右键动作就能直接跑起来，
   安装向导和 Windows 上一样。没装桌面入口时，用管理器里的「添加应用 → 直接运行 exe」，
   跑完不会往应用列表里塞条目；装好的程序会出现在 Windows 开始菜单里，刷新列表就能看到。
-- **Steam 游戏**：启动选项填 `winrun-manager --exec %command%`，兼容性选一个 Proton。
+- **Steam 游戏**：启动选项填 `protonboost --exec %command%`，兼容性选一个 Proton。
 
 界面里的键盘操作：
 
@@ -92,11 +92,11 @@ winrun-manager --doctor               # 环境诊断：缺什么命令、运行�
 
 | 位置 | 内容 |
 | --- | --- |
-| `~/.local/share/winrun/proton` | 默认前缀（老的 `~/.proton` 会自动沿用；可在运行设置里换成别的） |
-| `~/.cache/winrun/associations` | 每个程序的运行设置 |
-| `~/.cache/winrun/logs` | 运行日志与会话日志 |
-| `~/.cache/winrun/icons` | 从 exe/ico 里抠出来的图标 |
-| `$PREFIX/.winrun.conf` | 前缀自己的开关（`netns=`，侧栏前缀行右边那个小开关改的就是它） |
+| `~/.local/share/protonboost/proton` | 默认前缀（老的 `~/.proton` 会自动沿用；可在运行设置里换成别的） |
+| `~/.cache/protonboost/associations` | 每个程序的运行设置 |
+| `~/.cache/protonboost/logs` | 运行日志与会话日志 |
+| `~/.cache/protonboost/icons` | 从 exe/ico 里抠出来的图标 |
+| `$PREFIX/.protonboost.conf` | 前缀自己的开关（`netns=`，侧栏前缀行右边那个小开关改的就是它） |
 
 ## 运行器
 
@@ -104,7 +104,7 @@ winrun-manager --doctor               # 环境诊断：缺什么命令、运行�
 
 | 来源 | 位置 |
 | --- | --- |
-| 环境变量 | `WINRUN_RUNNER` / `PROTON_GE_PATH` 指向的 proton 或 wine |
+| 环境变量 | `PROTONBOOST_RUNNER` / `PROTON_GE_PATH` 指向的 proton 或 wine |
 | Steam 兼容性工具 | `~/.local/share/Steam/compatibilitytools.d/<名字>/proton`（GE、DW、WE 都在这） |
 | Steam 官方 Proton | `steamapps/common/Proton *`，含其他 Steam 库 |
 | 系统级 / Flatpak | `/usr/share/steam/...`、`~/.var/app/com.valvesoftware.Steam/...` |
@@ -122,7 +122,7 @@ Runtime（`SteamLinuxRuntime_sniper` / `soldier`），本机没有的话会自�
 ## 独立网络
 
 在侧栏把当前前缀右边那个小开关点亮，就给它开了独立网络（等价于在
-`$PREFIX/.winrun.conf` 里写 `netns=1`），下次启动生效。
+`$PREFIX/.protonboost.conf` 里写 `netns=1`），下次启动生效。
 
 前缀开了独立网络后，`pasta` 建一个 network namespace，keeper 进程待在里面把网络撑住，
 程序用 `nsenter` 进去；前缀里最后一个程序退出，keeper 跟着收摊。把 Windows 版加速器
@@ -140,10 +140,10 @@ Runtime（`SteamLinuxRuntime_sniper` / `soldier`），本机没有的话会自�
 在 Steam 里把游戏的启动选项设成：
 
 ```
-winrun-manager --exec %command%
+protonboost --exec %command%
 ```
 
-`%command%` 里 Steam 自己的运行器前缀会被剥掉，游戏改为在 WinRun 的前缀里跑——
+`%command%` 里 Steam 自己的运行器前缀会被剥掉，游戏改为在 ProtonBoost 的前缀里跑——
 于是它和加速器共享同一个独立网络。Windows 版 Steam（装在同一个前缀里的那份）
 也一样适用。
 
@@ -151,7 +151,7 @@ winrun-manager --exec %command%
 回环，keeper 会把连接转给宿主上的 Steam 客户端。
 
 Steam 覆盖层（FPS、成就）要靠 `getuid()` 找宿主客户端。命名空间里 Wine 是 root、
-宿主客户端是普通用户，两边对不上，覆盖层会悄悄失效。WinRun 把一个很小的辅助库
+宿主客户端是普通用户，两边对不上，覆盖层会悄悄失效。ProtonBoost 把一个很小的辅助库
 在**构建期编译好嵌进二进制**（`assets/overlay-uid/`），预加载进游戏后只让覆盖层
 看到真实 uid——用户机器上不需要装 C 编译器。只有在特殊架构上构建时才会回退到
 现场用 `cc` 编译。
@@ -159,7 +159,7 @@ Steam 覆盖层（FPS、成就）要靠 `getuid()` 找宿主客户端。命名�
 ## 构建
 
 ```bash
-cargo build            # 调试版 → target/debug/winrun-manager
+cargo build            # 调试版 → target/debug/protonboost
 cargo build --release  # 发布版
 ```
 
@@ -198,8 +198,8 @@ icons/                   图标（PNG + SVG）
 
 ```bash
 QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software \
-WINRUN_PAGE=apps WINRUN_SHOT=/tmp/shot.png \
-./target/debug/winrun-manager
+PROTONBOOST_PAGE=apps PROTONBOOST_SHOT=/tmp/shot.png \
+./target/debug/protonboost
 ```
 
 ## 设计来源

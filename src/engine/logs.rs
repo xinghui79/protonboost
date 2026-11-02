@@ -1,4 +1,4 @@
-//! 运行日志：`~/.cache/winrun/logs/<app-id>/latest.log`（原 lib/core.sh 的 setup_run_logging）
+//! 运行日志：`~/.cache/protonboost/logs/<app-id>/latest.log`（原 lib/core.sh 的 setup_run_logging）
 
 use crate::core::paths::cache_home;
 use crate::core::scan;
@@ -10,7 +10,7 @@ pub fn app_id(prefix: &Path, target: &Path) -> String {
 }
 
 pub fn log_dir(app_id: &str) -> PathBuf {
-    cache_home().join("winrun/logs").join(app_id)
+    cache_home().join("protonboost/logs").join(app_id)
 }
 
 pub fn latest_log(app_id: &str) -> PathBuf {

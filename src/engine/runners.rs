@@ -208,7 +208,7 @@ pub fn discover() -> Vec<Runner> {
     let local_dir = local_runner_dir();
     let default_dir = product_dir_name(DEFAULT_PRODUCT).unwrap_or("Proton-GE Latest");
 
-    for variable in ["WINRUN_RUNNER", "PROTON_GE_PATH"] {
+    for variable in ["PROTONBOOST_RUNNER", "PROTON_GE_PATH"] {
         if let Ok(value) = std::env::var(variable) {
             if !value.trim().is_empty() {
                 if let Some(runner) = resolve(&value) {

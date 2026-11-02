@@ -1,10 +1,10 @@
 [Desktop Entry]
 Type=Application
-Name=WinRun
-Name[zh_CN]=WinRun
+Name=ProtonBoost
+Name[zh_CN]=ProtonBoost
 Comment=Run Windows programs with Proton / Wine
-Exec=winrun-manager
-Icon=winrun
+Exec=protonboost
+Icon=protonboost
 Terminal=false
 Categories=Utility;X-Wine;
 StartupNotify=false

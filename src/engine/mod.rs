@@ -1,4 +1,4 @@
-//! 启动引擎：原来 CLI（bin/winrun + lib/*.sh）干的活，搬到这里
+//! 启动引擎：原来 CLI（bin/protonboost + lib/*.sh）干的活，搬到这里
 //!
 //! - `runners`：从 Steam / lutris / 本地目录里找出可用的 Proton / Wine
 //! - `runtime`：Proton 需要的 Steam Linux Runtime（没有就下）

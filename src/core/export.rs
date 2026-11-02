@@ -32,11 +32,11 @@ fn read_desktop_x_keys(path: &Path) -> (String, String, String) {
     let mut path_key = String::new();
     if let Ok(text) = std::fs::read_to_string(path) {
         for line in text.lines() {
-            if let Some(value) = line.strip_prefix("X-WinRun-ID=") {
+            if let Some(value) = line.strip_prefix("X-ProtonBoost-ID=") {
                 id = value.to_string();
-            } else if let Some(value) = line.strip_prefix("X-WinRun-Prefix=") {
+            } else if let Some(value) = line.strip_prefix("X-ProtonBoost-Prefix=") {
                 prefix_key = value.to_string();
-            } else if let Some(value) = line.strip_prefix("X-WinRun-Path=") {
+            } else if let Some(value) = line.strip_prefix("X-ProtonBoost-Path=") {
                 path_key = value.to_string();
             }
         }
@@ -70,7 +70,7 @@ pub fn exported_icon_path(prefix: &Path, app: &AppEntry, display_name: Option<&s
     }
 }
 
-/// 生成桌面文件：Exec 走 winrun；图标用应用图标
+/// 生成桌面文件：Exec 走 protonboost；图标用应用图标
 pub fn export_app(prefix: &Path, app: &AppEntry, manager: &Path, display_name: Option<&str>) -> PathBuf {
     let link = Path::new(&app.path);
     let name = display_name
@@ -91,7 +91,7 @@ pub fn export_app(prefix: &Path, app: &AppEntry, manager: &Path, display_name: O
     let mut icon_app = app.clone();
     icon_app.display_name = name.clone();
     let mut icon = crate::core::icons::icon_for_app(prefix, &icon_app, icon_path.parent());
-    if icon != "winrun" && Path::new(&icon).is_file() && Path::new(&icon) != icon_path {
+    if icon != "protonboost" && Path::new(&icon).is_file() && Path::new(&icon) != icon_path {
         if let Some(parent) = icon_path.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
@@ -99,9 +99,9 @@ pub fn export_app(prefix: &Path, app: &AppEntry, manager: &Path, display_name: O
         icon = icon_path.to_string_lossy().into_owned();
     }
     let text = format!(
-        "[Desktop Entry]\nType=Application\nName={name}\nComment=Run {name} with winrun\n\
+        "[Desktop Entry]\nType=Application\nName={name}\nComment=Run {name} with protonboost\n\
          Exec={exec_line}\nIcon={icon}\nTerminal=false\nCategories=Utility;X-Wine;\n\
-         X-WinRun-ID={}\nX-WinRun-Prefix={}\nX-WinRun-Path={}\n",
+         X-ProtonBoost-ID={}\nX-ProtonBoost-Prefix={}\nX-ProtonBoost-Path={}\n",
         app_identity(prefix, link),
         prefix.to_string_lossy(),
         link.to_string_lossy()

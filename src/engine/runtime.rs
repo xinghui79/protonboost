@@ -32,7 +32,7 @@ fn info(appid: &str) -> Option<RuntimeInfo> {
 }
 
 fn runtime_dir() -> PathBuf {
-    xdg("XDG_DATA_HOME", ".local/share").join("winrun/runtime")
+    xdg("XDG_DATA_HOME", ".local/share").join("protonboost/runtime")
 }
 
 fn steam_roots() -> Vec<PathBuf> {
@@ -136,7 +136,7 @@ fn download(info: &RuntimeInfo) -> bool {
         return false;
     };
 
-    let downloads = crate::core::paths::cache_home().join("winrun/downloads");
+    let downloads = crate::core::paths::cache_home().join("protonboost/downloads");
     let _ = std::fs::create_dir_all(&downloads);
     let archive = downloads.join(info.archive);
     if !fetch(&format!("{}{}", info.base_url, info.archive), &archive) {
@@ -189,7 +189,7 @@ fn runner_is_old_weproton(proton: &Path) -> bool {
 
 /// 运行 Proton 需要的 `_v2-entry-point` 前缀；不需要或拿不到时返回空
 pub fn entry_prefix(proton: &Path, verb: &str) -> Vec<String> {
-    if std::env::var("WINRUN_RUNTIME").map(|value| value == "0").unwrap_or(false) {
+    if std::env::var("PROTONBOOST_RUNTIME").map(|value| value == "0").unwrap_or(false) {
         return Vec::new();
     }
     let Some(appid) = required_appid(proton) else {

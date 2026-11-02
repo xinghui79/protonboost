@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# WinRun 安装/卸载脚本
+# ProtonBoost 安装/卸载脚本
 # 用法: ./install.sh [install|uninstall|help] [PREFIX]   （默认 install ~/.local）
 set -euo pipefail
 
@@ -13,7 +13,7 @@ BIN_DIR="$PREFIX/bin"
 APP_DIR="$PREFIX/share/applications"
 ICON_PNG="$PREFIX/share/icons/hicolor/512x512/apps"
 ICON_SVG="$PREFIX/share/icons/hicolor/scalable/apps"
-DATA_DIR="$PREFIX/share/winrun"
+DATA_DIR="$PREFIX/share/protonboost"
 # 装了什么就记在这里，卸载照着删，不会漏也不会误删别的
 MANIFEST="$DATA_DIR/installed-files.txt"
 
@@ -29,9 +29,9 @@ usage() {
   help        显示这段说明
 
 环境变量:
-  WINRUN_NO_BUILD=1   跳过 cargo build，直接装现成的 target/release/winrun-manager
+  PROTONBOOST_NO_BUILD=1   跳过 cargo build，直接装现成的 target/release/protonboost
 
-装完用 `winrun-manager` 打开；卸载跑 `./install.sh uninstall`。
+装完用 `protonboost` 打开；卸载跑 `./install.sh uninstall`。
 EOF
 }
 
@@ -50,21 +50,21 @@ require_qt() {
   Debian:  sudo apt install qt6-base-dev qt6-declarative-dev
   Fedora:  sudo dnf install qt6-qtbase-devel qt6-qtdeclarative-devel
 
-只是安装已经编译好的二进制则用: WINRUN_NO_BUILD=1 ./install.sh
+只是安装已经编译好的二进制则用: PROTONBOOST_NO_BUILD=1 ./install.sh
 EOF
     exit 1
 }
 
 build_manager() {
-    if [[ "${WINRUN_NO_BUILD:-0}" != "1" ]]; then
+    if [[ "${PROTONBOOST_NO_BUILD:-0}" != "1" ]]; then
         require_qt
         command -v cargo >/dev/null 2>&1 \
-            || die "需要 cargo 来构建（或设 WINRUN_NO_BUILD=1 用现成产物）"
-        say "构建 winrun-manager（首次较慢）..."
+            || die "需要 cargo 来构建（或设 PROTONBOOST_NO_BUILD=1 用现成产物）"
+        say "构建 protonboost（首次较慢）..."
         cargo build --release
     fi
-    [[ -x target/release/winrun-manager ]] \
-        || die "没有 target/release/winrun-manager，先 cargo build --release"
+    [[ -x target/release/protonboost ]] \
+        || die "没有 target/release/protonboost，先 cargo build --release"
 }
 
 refresh_caches() {
@@ -83,8 +83,8 @@ do_install() {
     tmp="$(mktemp)"
     trap 'rm -f "${tmp:-}"' EXIT
 
-    install -Dm755 target/release/winrun-manager "$BIN_DIR/winrun-manager"
-    printf '%s\n' "$BIN_DIR/winrun-manager" >> "$tmp"
+    install -Dm755 target/release/protonboost "$BIN_DIR/protonboost"
+    printf '%s\n' "$BIN_DIR/protonboost" >> "$tmp"
 
     local file
     for file in desktop/*.desktop; do
@@ -92,17 +92,17 @@ do_install() {
         printf '%s\n' "$APP_DIR/$(basename "$file")" >> "$tmp"
     done
 
-    install -Dm644 icons/winrun.png "$ICON_PNG/winrun.png"
-    printf '%s\n' "$ICON_PNG/winrun.png" >> "$tmp"
-    install -Dm644 icons/winrun.svg "$ICON_SVG/winrun.svg"
-    printf '%s\n' "$ICON_SVG/winrun.svg" >> "$tmp"
+    install -Dm644 icons/protonboost.png "$ICON_PNG/protonboost.png"
+    printf '%s\n' "$ICON_PNG/protonboost.png" >> "$tmp"
+    install -Dm644 icons/protonboost.svg "$ICON_SVG/protonboost.svg"
+    printf '%s\n' "$ICON_SVG/protonboost.svg" >> "$tmp"
 
     install -Dm644 "$tmp" "$MANIFEST"
     refresh_caches
 
     say "已安装到 $PREFIX"
-    timeout 3 "$BIN_DIR/winrun-manager" --version 2>/dev/null || true
-    say "打开: winrun-manager      卸载: $0 uninstall"
+    timeout 3 "$BIN_DIR/protonboost" --version 2>/dev/null || true
+    say "打开: protonboost      卸载: $0 uninstall"
 }
 
 do_uninstall() {
@@ -115,21 +115,21 @@ do_uninstall() {
     else
         # 没有安装记录（早期版本装的），退回固定列表
         files+=(
-            "$BIN_DIR/winrun-manager"
-            "$APP_DIR/winrun-manager.desktop"
-            "$APP_DIR/winrun-run.desktop"
-            "$APP_DIR/winrun-settings.desktop"
-            "$ICON_PNG/winrun.png"
-            "$ICON_SVG/winrun.svg"
+            "$BIN_DIR/protonboost"
+            "$APP_DIR/protonboost.desktop"
+            "$APP_DIR/protonboost-run.desktop"
+            "$APP_DIR/protonboost-settings.desktop"
+            "$ICON_PNG/protonboost.png"
+            "$ICON_SVG/protonboost.svg"
         )
     fi
 
     # Bash CLI 时代留下的文件名，顺手清掉
     files+=(
-        "$APP_DIR/winrun-run-windows-program.desktop"
-        "$APP_DIR/winrun-windows-program-configure.desktop"
-        "$BIN_DIR/winrun"
-        "$BIN_DIR/winrun-configure"
+        "$APP_DIR/protonboost-run-windows-program.desktop"
+        "$APP_DIR/protonboost-windows-program-configure.desktop"
+        "$BIN_DIR/protonboost"
+        "$BIN_DIR/protonboost-configure"
     )
 
     local file
@@ -144,11 +144,11 @@ do_uninstall() {
     rmdir "$DATA_DIR" 2>/dev/null || true
     # 早期版本把脚本库放在这里
     if [[ -n "$PREFIX" && "$PREFIX" != "/" ]]; then
-        rm -rf "$PREFIX/lib/winrun"
+        rm -rf "$PREFIX/lib/protonboost"
     fi
 
     refresh_caches
-    say "已从 $PREFIX 移除 winrun"
+    say "已从 $PREFIX 移除 protonboost"
 }
 
 case "$MODE" in

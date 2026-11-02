@@ -1,4 +1,4 @@
-// WinRun 管理器：Rust + Qt6 (QML)
+// ProtonBoost 管理器：Rust + Qt6 (QML)
 //
 // cxx-qt 会按 QML 侧看到的属性名生成 processPrefixes / uiEvents 这类方法与字段，
 // 与 Rust 的 snake_case 约定冲突，这里统一放行。
@@ -15,21 +15,21 @@ use cxx_qt_lib::{QString, QQmlApplicationEngine, QUrl};
 use std::path::PathBuf;
 
 // QML 内容指纹（见 build.rs）：只改 QML 时靠它触发重编译与重链接
-const QML_STAMP: &str = env!("WINRUN_QML_STAMP");
+const QML_STAMP: &str = env!("PROTONBOOST_QML_STAMP");
 
 fn print_usage() {
     println!(
-        "winrun-manager {} —— 在 Linux 上用 Proton / Wine 跑 Windows 程序
+        "protonboost {} —— 在 Linux 上用 Proton / Wine 跑 Windows 程序
 
 用法:
-  winrun-manager                    打开管理器
-  winrun-manager --run <exe>        按保存的配置启动（桌面入口用）
-  winrun-manager --configure <exe>  只打开某个程序的运行设置
-  winrun-manager --exec <命令...>   在前缀会话里跑一条命令（Steam 启动选项）
-  winrun-manager --list-runner      列出找到的 Proton / Wine
-  winrun-manager --dump-scan [前缀] 打印前缀扫描结果，排查界面为什么是空的
-  winrun-manager --doctor            环境诊断（缺什么、什么在哪儿）
-  winrun-manager --version          版本",
+  protonboost                    打开管理器
+  protonboost --run <exe>        按保存的配置启动（桌面入口用）
+  protonboost --configure <exe>  只打开某个程序的运行设置
+  protonboost --exec <命令...>   在前缀会话里跑一条命令（Steam 启动选项）
+  protonboost --list-runner      列出找到的 Proton / Wine
+  protonboost --dump-scan [前缀] 打印前缀扫描结果，排查界面为什么是空的
+  protonboost --doctor            环境诊断（缺什么、什么在哪儿）
+  protonboost --version          版本",
         env!("CARGO_PKG_VERSION")
     );
 }
@@ -40,7 +40,7 @@ fn print_usage() {
 /// 出问题时（程序起不来、加速器不生效、覆盖层没有）先跑这个，
 /// 比逐个猜要快得多。
 fn doctor() {
-    println!("WinRun 诊断");
+    println!("ProtonBoost 诊断");
     println!();
 
     println!("命令:");
@@ -66,8 +66,8 @@ fn doctor() {
     println!("  前置环境               {}", prefix.display());
     println!("    pfx（C 盘）           {}", prefix.join("pfx").display());
     println!("    存在                  {}", if prefix.join("pfx").is_dir() { "是" } else { "否（首次启动会自动初始化）" });
-    println!("  缓存                   {}", core::paths::cache_home().join("winrun").display());
-    println!("  独立网络开关           {}", prefix.join(".winrun.conf").display());
+    println!("  缓存                   {}", core::paths::cache_home().join("protonboost").display());
+    println!("  独立网络开关           {}", prefix.join(".protonboost.conf").display());
 
     println!();
     println!("运行器:");
@@ -113,7 +113,7 @@ fn main() {
     // 运行模式（导出的桌面入口用）：--run <exe>
     // 版本与用法：脚本、打包、issue 里都用得上，别为了问一句版本把 GUI 拉起来
     if args.iter().any(|arg| arg == "--version" || arg == "-V") {
-        println!("winrun-manager {}", env!("CARGO_PKG_VERSION"));
+        println!("protonboost {}", env!("CARGO_PKG_VERSION"));
         return;
     }
     if args.iter().any(|arg| arg == "--help" || arg == "-h") {
@@ -203,8 +203,8 @@ fn main() {
         });
     }
 
-    cxx_qt::init_crate!(winrun_manager);
-    cxx_qt::init_qml_module!("WinRun");
+    cxx_qt::init_crate!(protonboost);
+    cxx_qt::init_qml_module!("ProtonBoost");
 
     shim_bridge::log_bridge();
     let mut app = shim_bridge::app_new(&QString::from(env!("CARGO_PKG_VERSION")));
@@ -218,9 +218,9 @@ fn main() {
     // 托盘（独立配置窗口不需要）
     if !configure_mode {
         let (open_text, quit_text) = if core::loc::zh() {
-            ("打开 WinRun", "退出")
+            ("打开 ProtonBoost", "退出")
         } else {
-            ("Open WinRun", "Quit")
+            ("Open ProtonBoost", "Quit")
         };
         shim_bridge::tray_create(
             &QString::from(tray_icon_path().to_string_lossy().as_ref()),
@@ -232,12 +232,12 @@ fn main() {
 
     let mut qml_engine = QQmlApplicationEngine::new();
     if let Some(qml_engine) = qml_engine.as_mut() {
-        qml_engine.load(&QUrl::from("qrc:/qt/qml/WinRun/qml/Main.qml"));
+        qml_engine.load(&QUrl::from("qrc:/qt/qml/ProtonBoost/qml/Main.qml"));
     }
 
-    // 开发用：WINRUN_SHOT=<png 路径> 时渲染完截图再退出（配合 offscreen 平台做无头验收）
-    if let Ok(shot) = std::env::var("WINRUN_SHOT") {
-        let delay = std::env::var("WINRUN_SHOT_DELAY")
+    // 开发用：PROTONBOOST_SHOT=<png 路径> 时渲染完截图再退出（配合 offscreen 平台做无头验收）
+    if let Ok(shot) = std::env::var("PROTONBOOST_SHOT") {
+        let delay = std::env::var("PROTONBOOST_SHOT_DELAY")
             .ok()
             .and_then(|value| value.parse::<i32>().ok())
             .unwrap_or(1500);
@@ -255,7 +255,7 @@ fn main() {
 fn run_saved(exe: &str) {
     let target = core::paths::expand_path(exe);
     let Some((prefix, entry)) = core::conf::find_for_target(&target) else {
-        eprintln!("winrun: 没有找到 {} 的配置", target.display());
+        eprintln!("protonboost: 没有找到 {} 的配置", target.display());
         std::process::exit(1);
     };
     let request = engine::launch::Request {
@@ -277,7 +277,7 @@ fn run_saved(exe: &str) {
     match engine::launch::launch(&request, core::loc::zh()) {
         Ok(_) => {}
         Err(err) => {
-            eprintln!("winrun: {err}");
+            eprintln!("protonboost: {err}");
             std::process::exit(1);
         }
     }
@@ -285,9 +285,9 @@ fn run_saved(exe: &str) {
 
 fn tray_icon_path() -> PathBuf {
     let candidates = [
-        core::paths::data_home().join("icons/hicolor/512x512/apps/winrun.png"),
-        core::paths::data_home().join("icons/winrun/apps"),
-        PathBuf::from("/usr/share/icons/hicolor/512x512/apps/winrun.png"),
+        core::paths::data_home().join("icons/hicolor/512x512/apps/protonboost.png"),
+        core::paths::data_home().join("icons/protonboost/apps"),
+        PathBuf::from("/usr/share/icons/hicolor/512x512/apps/protonboost.png"),
     ];
     for candidate in candidates {
         if candidate.is_file() {
@@ -298,9 +298,9 @@ fn tray_icon_path() -> PathBuf {
     std::env::current_exe()
         .ok()
         .and_then(|exe| exe.ancestors().nth(3).map(|dir| dir.to_path_buf()))
-        .map(|dir| dir.join("icons/winrun.png"))
+        .map(|dir| dir.join("icons/protonboost.png"))
         .filter(|path| path.is_file())
-        .unwrap_or_else(|| PathBuf::from("winrun"))
+        .unwrap_or_else(|| PathBuf::from("protonboost"))
 }
 
 fn tray_toggle() {

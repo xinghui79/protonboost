@@ -263,7 +263,7 @@ fn resolve_icon(prefix: &Path, app: &AppEntry, target_dir: Option<&Path>, deep: 
             }
         }
     }
-    "winrun".into()
+    "protonboost".into()
 }
 
 /// 桌面图标名 → 本地 PNG 缓存；取不到时返回空串

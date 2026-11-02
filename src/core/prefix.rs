@@ -104,7 +104,7 @@ pub fn collect_running_process_prefixes() -> Vec<PathBuf> {
                 String::from_utf8_lossy(&item[pos + 1..]).into_owned(),
             );
         }
-        for key in ["WINEPREFIX", "STEAM_COMPAT_DATA_PATH", "WINRUN_PREFIX"] {
+        for key in ["WINEPREFIX", "STEAM_COMPAT_DATA_PATH", "PROTONBOOST_PREFIX"] {
             let Some(value) = env.get(key) else { continue };
             let path = expand_path(value);
             let matched = match key {
@@ -218,15 +218,15 @@ pub fn prefix_runner(prefix: &Path) -> String {
 }
 
 pub fn netns_enabled(prefix: &Path) -> bool {
-    let conf = prefix.join(".winrun.conf");
+    let conf = prefix.join(".protonboost.conf");
     std::fs::read_to_string(&conf)
         .map(|text| text.lines().any(|line| line.trim() == "netns=1"))
         .unwrap_or(false)
 }
 
-/// 开关独立网络：保留 .winrun.conf 里的其它键，只替换 netns 这一行
+/// 开关独立网络：保留 .protonboost.conf 里的其它键，只替换 netns 这一行
 pub fn set_netns(prefix: &Path, enabled: bool) -> Result<(), String> {
-    let conf = prefix.join(".winrun.conf");
+    let conf = prefix.join(".protonboost.conf");
     let text = std::fs::read_to_string(&conf).unwrap_or_default();
     let mut lines: Vec<String> = text
         .lines()

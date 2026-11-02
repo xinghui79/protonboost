@@ -40,7 +40,7 @@ static int find_overlay(struct dl_phdr_info *info, size_t size, void *data)
 
 static long overlay_uid(void)
 {
-    const char *value = getenv("WINRUN_OVERLAY_UID");
+    const char *value = getenv("PROTONBOOST_OVERLAY_UID");
     long uid = 0;
 
     if (!value || !*value)

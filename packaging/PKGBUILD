@@ -1,18 +1,18 @@
-# Maintainer: WinRun <winrun@example.com>
+# Maintainer: ProtonBoost <protonboost@example.com>
 # 构建：makepkg -f        （只出包）
 # 安装：makepkg -si       （构建 + sudo 装到 /usr）
 # 用 rustup 装了 rust 的话，makepkg 会认为缺 cargo：加 --nodeps
 #
 # 本地开发时 source 指向当前 git 仓库；发布到 AUR 前，把 _repo 换成
-#   _repo="git+https://github.com/<you>/winrun"
-# 或用环境变量：WINRUN_REPO=git+https://... makepkg -f
+#   _repo="git+https://github.com/<you>/protonboost"
+# 或用环境变量：PROTONBOOST_REPO=git+https://... makepkg -f
 
-pkgname=winrun
+pkgname=protonboost
 pkgver=0.1.0
 pkgrel=1
 pkgdesc="在 Linux 上用 Proton / Wine 运行 Windows 程序（Rust + Qt 6）"
 arch=('x86_64' 'aarch64')
-url="https://github.com/winrun-linux/winrun"
+url="https://github.com/protonboost-linux/protonboost"
 license=('MIT')
 depends=(
     'qt6-base'
@@ -35,7 +35,7 @@ optdepends=(
 )
 options=('!lto')
 
-_repo="${WINRUN_REPO:-file://$startdir/..}"
+_repo="${PROTONBOOST_REPO:-file://$startdir/..}"
 source=("$pkgname::git+$_repo")
 sha256sums=('SKIP')
 
@@ -47,14 +47,14 @@ build() {
 
 package() {
     cd "$pkgname"
-    install -Dm755 "$srcdir/target/release/winrun-manager" \
-        "$pkgdir/usr/bin/winrun-manager"
+    install -Dm755 "$srcdir/target/release/protonboost" \
+        "$pkgdir/usr/bin/protonboost"
 
     local file
     for file in desktop/*.desktop; do
         install -Dm644 "$file" "$pkgdir/usr/share/applications/$(basename "$file")"
     done
 
-    install -Dm644 icons/winrun.png "$pkgdir/usr/share/icons/hicolor/512x512/apps/winrun.png"
-    install -Dm644 icons/winrun.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/winrun.svg"
+    install -Dm644 icons/protonboost.png "$pkgdir/usr/share/icons/hicolor/512x512/apps/protonboost.png"
+    install -Dm644 icons/protonboost.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/protonboost.svg"
 }

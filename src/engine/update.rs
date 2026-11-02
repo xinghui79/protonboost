@@ -60,7 +60,7 @@ fn blocking_arch(name: &str) -> bool {
 
 fn fetch(url: &str) -> Option<Vec<u8>> {
     let output = Command::new("curl")
-        .args(["-fsSL", "--connect-timeout", "20", "--max-time", "40", "-H", "User-Agent: winrun"])
+        .args(["-fsSL", "--connect-timeout", "20", "--max-time", "40", "-H", "User-Agent: protonboost"])
         .arg(url)
         .output()
         .ok()?;
@@ -190,7 +190,7 @@ fn sha512_file(path: &Path) -> Option<String> {
 }
 
 pub fn install(candidates: &[Candidate]) -> Result<usize, String> {
-    let downloads = cache_home().join("winrun/downloads");
+    let downloads = cache_home().join("protonboost/downloads");
     std::fs::create_dir_all(&downloads).map_err(|err| err.to_string())?;
     let mut updated = 0;
 

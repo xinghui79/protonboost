@@ -14,7 +14,7 @@
 #include "rust/cxx.h"
 #include "shim.h"
 
-void winrun_install_log_bridge() {
+void protonboost_install_log_bridge() {
     qInstallMessageHandler([](QtMsgType type, const QMessageLogContext &context, const QString &msg) {
         Q_UNUSED(type);
         Q_UNUSED(context);
@@ -23,31 +23,31 @@ void winrun_install_log_bridge() {
     });
 }
 
-void winrun_set_window_icon(const QString &iconPath) {
+void protonboost_set_window_icon(const QString &iconPath) {
     QApplication::setWindowIcon(QIcon(iconPath));
 }
 
-std::unique_ptr<QApplication> winrun_app_new(const QString &version) {
+std::unique_ptr<QApplication> protonboost_app_new(const QString &version) {
     static int argc = 1;
-    static char arg0[] = "winrun-manager";
+    static char arg0[] = "protonboost";
     static char *argv[] = {arg0, nullptr};
     auto app = std::unique_ptr<QApplication>(new QApplication(argc, argv));
-    QApplication::setApplicationName(QStringLiteral("WinRun"));
-    QApplication::setApplicationDisplayName(QStringLiteral("WinRun"));
+    QApplication::setApplicationName(QStringLiteral("ProtonBoost"));
+    QApplication::setApplicationDisplayName(QStringLiteral("ProtonBoost"));
     QApplication::setApplicationVersion(version);
-    QApplication::setDesktopFileName(QStringLiteral("winrun"));
+    QApplication::setDesktopFileName(QStringLiteral("protonboost"));
     return app;
 }
 
-int winrun_app_exec(const QApplication &app) {
+int protonboost_app_exec(const QApplication &app) {
     return const_cast<QApplication &>(app).exec();
 }
 
-void winrun_app_quit() {
+void protonboost_app_quit() {
     QApplication::quit();
 }
 
-bool winrun_icon_convert(const QString &source, const QString &target, int max_size) {
+bool protonboost_icon_convert(const QString &source, const QString &target, int max_size) {
     QImage image(source);
     if (image.isNull()) {
         return false;
@@ -61,7 +61,7 @@ bool winrun_icon_convert(const QString &source, const QString &target, int max_s
 }
 
 // 桌面图标名（freedesktop 主题）→ PNG；找不到主题图标时返回 false
-bool winrun_theme_icon(const QString &name, const QString &target, int size) {
+bool protonboost_theme_icon(const QString &name, const QString &target, int size) {
     const QIcon icon = QIcon::fromTheme(name);
     if (icon.isNull()) {
         return false;
@@ -73,76 +73,76 @@ bool winrun_theme_icon(const QString &name, const QString &target, int size) {
     return pixmap.toImage().save(target, "PNG");
 }
 
-namespace winrun_tray {
+namespace protonboost_tray {
 std::function<void()> on_open;
 std::function<void()> on_quit;
 QSystemTrayIcon *icon = nullptr;
 QMenu *menu = nullptr;
-} // namespace winrun_tray
+} // namespace protonboost_tray
 
-bool winrun_tray_available() {
+bool protonboost_tray_available() {
     return QSystemTrayIcon::isSystemTrayAvailable();
 }
 
-void winrun_tray_create(const QString &iconPath, rust::Fn<void()> on_open, rust::Fn<void()> on_quit) {
-    winrun_tray::on_open = [on_open]() { on_open(); };
-    winrun_tray::on_quit = [on_quit]() { on_quit(); };
+void protonboost_tray_create(const QString &iconPath, rust::Fn<void()> on_open, rust::Fn<void()> on_quit) {
+    protonboost_tray::on_open = [on_open]() { on_open(); };
+    protonboost_tray::on_quit = [on_quit]() { on_quit(); };
     auto *tray = new QSystemTrayIcon(QIcon(iconPath));
-    winrun_tray::icon = tray;
+    protonboost_tray::icon = tray;
     auto *menu = new QMenu();
-    winrun_tray::menu = menu;
-    auto *open_action = menu->addAction(QStringLiteral("打开 WinRun"));
+    protonboost_tray::menu = menu;
+    auto *open_action = menu->addAction(QStringLiteral("打开 ProtonBoost"));
     auto *quit_action = menu->addAction(QStringLiteral("退出"));
     QObject::connect(open_action, &QAction::triggered, []() {
-        if (winrun_tray::on_open) {
-            winrun_tray::on_open();
+        if (protonboost_tray::on_open) {
+            protonboost_tray::on_open();
         }
     });
     QObject::connect(quit_action, &QAction::triggered, []() {
-        if (winrun_tray::on_quit) {
-            winrun_tray::on_quit();
+        if (protonboost_tray::on_quit) {
+            protonboost_tray::on_quit();
         }
     });
     tray->setContextMenu(menu);
-    tray->setToolTip(QStringLiteral("WinRun"));
+    tray->setToolTip(QStringLiteral("ProtonBoost"));
     QObject::connect(tray, &QSystemTrayIcon::activated,
                      [](QSystemTrayIcon::ActivationReason reason) {
-                         if (reason == QSystemTrayIcon::Trigger && winrun_tray::on_open) {
-                             winrun_tray::on_open();
+                         if (reason == QSystemTrayIcon::Trigger && protonboost_tray::on_open) {
+                             protonboost_tray::on_open();
                          }
                      });
     tray->show();
     if (!QSystemTrayIcon::isSystemTrayAvailable()) {
-        qDebug() << "winrun: system tray not available";
+        qDebug() << "protonboost: system tray not available";
     }
 }
 
-void winrun_tray_set_menu_title(const QString &open, const QString &quit) {
-    if (!winrun_tray::menu) {
+void protonboost_tray_set_menu_title(const QString &open, const QString &quit) {
+    if (!protonboost_tray::menu) {
         return;
     }
-    const auto actions = winrun_tray::menu->actions();
+    const auto actions = protonboost_tray::menu->actions();
     if (actions.size() >= 2) {
         actions[0]->setText(open);
         actions[1]->setText(quit);
     }
 }
 
-void winrun_tray_cleanup() {
-    if (winrun_tray::icon) {
-        winrun_tray::icon->hide();
-        winrun_tray::icon->deleteLater();
-        winrun_tray::icon = nullptr;
+void protonboost_tray_cleanup() {
+    if (protonboost_tray::icon) {
+        protonboost_tray::icon->hide();
+        protonboost_tray::icon->deleteLater();
+        protonboost_tray::icon = nullptr;
     }
-    if (winrun_tray::menu) {
-        winrun_tray::menu->deleteLater();
-        winrun_tray::menu = nullptr;
+    if (protonboost_tray::menu) {
+        protonboost_tray::menu->deleteLater();
+        protonboost_tray::menu = nullptr;
     }
 }
 
 // 开发用截图：延时抓取所有可见窗口，保存后退出。
-// 用法：QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software WINRUN_SHOT=/tmp/a.png winrun-manager
-void winrun_grab_windows(const QString &path, int delay_ms) {
+// 用法：QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software PROTONBOOST_SHOT=/tmp/a.png protonboost
+void protonboost_grab_windows(const QString &path, int delay_ms) {
     QTimer::singleShot(delay_ms, [path]() {
         int index = 0;
         for (QWindow *window : QGuiApplication::topLevelWindows()) {

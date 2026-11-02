@@ -14,11 +14,11 @@ pub fn xdg(var: &str, fallback: &str) -> PathBuf {
 
 /// 默认前缀。
 ///
-/// 新用户放在 `~/.local/share/winrun/proton`（XDG，文件管理器里看得见）；
+/// 新用户放在 `~/.local/share/protonboost/proton`（XDG，文件管理器里看得见）；
 /// 老的 `~/.proton` 只要还在就继续用它——不搬用户的数据。
-/// `WINRUN_PREFIX` 环境变量优先级最高。
+/// `PROTONBOOST_PREFIX` 环境变量优先级最高。
 pub fn default_prefix() -> PathBuf {
-    if let Ok(value) = std::env::var("WINRUN_PREFIX") {
+    if let Ok(value) = std::env::var("PROTONBOOST_PREFIX") {
         let value = value.trim();
         if !value.is_empty() {
             return expand_path(value);
@@ -29,7 +29,7 @@ pub fn default_prefix() -> PathBuf {
     if legacy.join("pfx").is_dir() || legacy.join("drive_c").is_dir() {
         return legacy;
     }
-    data_home().join("winrun/proton")
+    data_home().join("protonboost/proton")
 }
 
 pub fn cache_home() -> PathBuf {
@@ -41,23 +41,23 @@ pub fn data_home() -> PathBuf {
 }
 
 pub fn association_dir() -> PathBuf {
-    cache_home().join("winrun/associations")
+    cache_home().join("protonboost/associations")
 }
 
 pub fn gui_icon_dir() -> PathBuf {
-    cache_home().join("winrun/icons")
+    cache_home().join("protonboost/icons")
 }
 
 pub fn exported_icon_dir() -> PathBuf {
-    data_home().join("icons/winrun/apps")
+    data_home().join("icons/protonboost/apps")
 }
 
 pub fn exported_app_dir() -> PathBuf {
-    data_home().join("applications/winrun")
+    data_home().join("applications/protonboost")
 }
 
 pub fn run_log_root() -> PathBuf {
-    cache_home().join("winrun/logs")
+    cache_home().join("protonboost/logs")
 }
 
 pub fn app_log_dir(app_id: &str) -> PathBuf {

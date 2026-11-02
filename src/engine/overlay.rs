@@ -47,7 +47,7 @@ fn embedded(bits: u32) -> Option<&'static [u8]> {
 }
 
 fn cache_dir() -> PathBuf {
-    cache_home().join("winrun/overlay-uid")
+    cache_home().join("protonboost/overlay-uid")
 }
 
 /// 源码指纹：改了源码就重新铺缓存
@@ -165,7 +165,7 @@ pub fn prepare_env(
     }
     let joined = format!("{preload}:{}", libs.join(":"));
     out.push(("LD_PRELOAD".into(), joined));
-    out.push(("WINRUN_OVERLAY_UID".into(), overlay_uid.to_string()));
+    out.push(("PROTONBOOST_OVERLAY_UID".into(), overlay_uid.to_string()));
     out
 }
 

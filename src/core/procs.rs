@@ -103,7 +103,7 @@ pub fn scan_processes(prefix: &Path) -> Vec<ProcEntry> {
         let env = process_env(pid);
         let matched = wineprefixes.iter().any(|p| env.get("WINEPREFIX").is_some_and(|v| v == p))
             || env.get("STEAM_COMPAT_DATA_PATH").is_some_and(|v| *v == steam_data)
-            || env.get("WINRUN_PREFIX").is_some_and(|v| *v == steam_data);
+            || env.get("PROTONBOOST_PREFIX").is_some_and(|v| *v == steam_data);
         if !matched {
             continue;
         }
@@ -123,9 +123,9 @@ pub fn scan_processes(prefix: &Path) -> Vec<ProcEntry> {
             name: comm.clone(),
             command: if command.is_empty() { comm } else { command },
             age: process_start_time(pid),
-            app_id: env.get("WINRUN_APP_ID").cloned().unwrap_or_default(),
-            app_path: env.get("WINRUN_APP_PATH").cloned().unwrap_or_default(),
-            log: env.get("WINRUN_LOG").cloned().unwrap_or_default(),
+            app_id: env.get("PROTONBOOST_APP_ID").cloned().unwrap_or_default(),
+            app_path: env.get("PROTONBOOST_APP_PATH").cloned().unwrap_or_default(),
+            log: env.get("PROTONBOOST_LOG").cloned().unwrap_or_default(),
         });
     }
     result.sort_by_key(|proc| proc.pid);

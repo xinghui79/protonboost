@@ -172,10 +172,10 @@ fn build_command(request: &Request, runner: &Runner, session: &session::Session)
     let has_env = |env: &Vec<(String, String)>, key: &str| env.iter().any(|(name, _)| name == key);
 
     let app_id = logs::app_id(&request.prefix, &request.target);
-    env.push(("WINRUN_APP_ID".into(), app_id.clone()));
-    env.push(("WINRUN_APP_PATH".into(), request.target.to_string_lossy().into_owned()));
-    env.push(("WINRUN_PREFIX".into(), request.prefix.to_string_lossy().into_owned()));
-    env.push(("WINRUN_LOG".into(), logs::latest_log(&app_id).to_string_lossy().into_owned()));
+    env.push(("PROTONBOOST_APP_ID".into(), app_id.clone()));
+    env.push(("PROTONBOOST_APP_PATH".into(), request.target.to_string_lossy().into_owned()));
+    env.push(("PROTONBOOST_PREFIX".into(), request.prefix.to_string_lossy().into_owned()));
+    env.push(("PROTONBOOST_LOG".into(), logs::latest_log(&app_id).to_string_lossy().into_owned()));
 
     // Wine 的新 WoW64 用 64 位宿主库跑 32 位程序，WE-Proton 的 wintun 加速引擎要的就是它
     if runner.kind == "proton" && !has_env(&env, "PROTON_USE_WOW64") {
@@ -227,7 +227,7 @@ fn build_command(request: &Request, runner: &Runner, session: &session::Session)
             ("SteamGameId".into(), request.steam_appid.clone()),
         ];
         if request.steam_appid.is_empty() {
-            compat.push(("UMU_ID".into(), "winrun".into()));
+            compat.push(("UMU_ID".into(), "protonboost".into()));
             compat.push(("UMU_USE_STEAM".into(), "0".into()));
         }
         env.extend(compat);
@@ -259,7 +259,7 @@ fn build_command(request: &Request, runner: &Runner, session: &session::Session)
 
 /// 前缀还没建过：跑一次 wineboot，之后默认进独立网络
 pub fn init_prefix(prefix: &Path, runner: &Runner) -> Result<(), String> {
-    let log_path = crate::core::paths::cache_home().join("winrun/logs/init.log");
+    let log_path = crate::core::paths::cache_home().join("protonboost/logs/init.log");
     let _ = std::fs::create_dir_all(log_path.parent().unwrap_or(Path::new("/tmp")));
     let mut log = std::fs::File::create(&log_path).map_err(|err| err.to_string())?;
 
@@ -388,7 +388,7 @@ pub fn run_command(prefix: &Path, argv: &[String]) -> Result<(), String> {
         command
     };
     command
-        .env("WINRUN_PREFIX", prefix)
+        .env("PROTONBOOST_PREFIX", prefix)
         .stdin(Stdio::null())
         .stdout(Stdio::from(log.try_clone().map_err(|err| err.to_string())?))
         .stderr(Stdio::from(log));
@@ -401,7 +401,7 @@ pub fn run_command(prefix: &Path, argv: &[String]) -> Result<(), String> {
 ///
 /// Steam 展开 `%command%` 后是一长串：Steam 自己的运行器前缀 + `proton` +
 /// 动词 + 游戏 exe + 参数。把 `proton <动词>` 之后的那段截出来，游戏就能
-/// 在 WinRun 的前缀和独立网络里跑，而不是 Steam 给它建的那一套。
+/// 在 ProtonBoost 的前缀和独立网络里跑，而不是 Steam 给它建的那一套。
 ///
 /// 找不到就返回 None（那说明 %command% 指向的是 Linux 原生程序，
 /// 交给 run_command 那条路处理）。
@@ -446,18 +446,18 @@ pub fn steam_app_id_from_env() -> Option<String> {
 /// 前缀开了独立网络时进同一个命名空间，返回它的退出码。
 pub fn exec_foreground(prefix: &Path, argv: &[String]) -> i32 {
     if argv.is_empty() {
-        eprintln!("winrun: --exec 后面没有命令");
+        eprintln!("protonboost: --exec 后面没有命令");
         return 2;
     }
     let zh = crate::core::loc::zh();
 
-    // Steam 的 %command%：把游戏从 Steam 的运行器里取出来，改用 WinRun 的前缀跑。
+    // Steam 的 %command%：把游戏从 Steam 的运行器里取出来，改用 ProtonBoost 的前缀跑。
     // 这样它和加速器在同一个前缀、同一个独立网络里。
     if let Some((target, args)) = take_steam_command(argv) {
         let runner = runners::for_prefix(prefix);
         let Some(runner) = runner else {
             eprintln!(
-                "winrun: {}",
+                "protonboost: {}",
                 if zh {
                     "没有找到可用的运行器（Proton / Wine）"
                 } else {
@@ -477,7 +477,7 @@ pub fn exec_foreground(prefix: &Path, argv: &[String]) -> i32 {
         return match launch(&request, zh) {
             Ok(_) => 0,
             Err(err) => {
-                eprintln!("winrun: {err}");
+                eprintln!("protonboost: {err}");
                 1
             }
         };
@@ -486,7 +486,7 @@ pub fn exec_foreground(prefix: &Path, argv: &[String]) -> i32 {
     let session = match session::prepare(prefix, zh) {
         Ok(session) => session,
         Err(err) => {
-            eprintln!("winrun: {}", err.message(zh));
+            eprintln!("protonboost: {}", err.message(zh));
             return 1;
         }
     };
@@ -505,11 +505,11 @@ pub fn exec_foreground(prefix: &Path, argv: &[String]) -> i32 {
         command.args(&join[1..]).args(argv);
         command
     };
-    command.env("WINRUN_PREFIX", prefix);
+    command.env("PROTONBOOST_PREFIX", prefix);
     match command.status() {
         Ok(status) => status.code().unwrap_or(0),
         Err(err) => {
-            eprintln!("winrun: {err}");
+            eprintln!("protonboost: {err}");
             1
         }
     }

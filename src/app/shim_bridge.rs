@@ -10,44 +10,44 @@ pub mod ffi {
         type QApplication;
 
         #[rust_name = "log_bridge"]
-        fn winrun_install_log_bridge();
+        fn protonboost_install_log_bridge();
 
         #[rust_name = "set_window_icon"]
-        fn winrun_set_window_icon(icon_path: &QString);
+        fn protonboost_set_window_icon(icon_path: &QString);
 
         #[rust_name = "app_new"]
-        fn winrun_app_new(version: &QString) -> UniquePtr<QApplication>;
+        fn protonboost_app_new(version: &QString) -> UniquePtr<QApplication>;
 
         #[rust_name = "app_exec"]
-        fn winrun_app_exec(app: &QApplication) -> i32;
+        fn protonboost_app_exec(app: &QApplication) -> i32;
 
         #[rust_name = "app_quit"]
-        fn winrun_app_quit();
+        fn protonboost_app_quit();
 
         #[rust_name = "icon_convert"]
-        fn winrun_icon_convert(source: &QString, target: &QString, max_size: i32) -> bool;
+        fn protonboost_icon_convert(source: &QString, target: &QString, max_size: i32) -> bool;
 
         #[rust_name = "theme_icon"]
-        fn winrun_theme_icon(name: &QString, target: &QString, size: i32) -> bool;
+        fn protonboost_theme_icon(name: &QString, target: &QString, size: i32) -> bool;
 
         #[rust_name = "tray_available"]
-        fn winrun_tray_available() -> bool;
+        fn protonboost_tray_available() -> bool;
 
         #[rust_name = "tray_create"]
-        fn winrun_tray_create(
+        fn protonboost_tray_create(
             icon_path: &QString,
             on_open: unsafe fn(),
             on_quit: unsafe fn(),
         );
 
         #[rust_name = "tray_set_menu_title"]
-        fn winrun_tray_set_menu_title(open: &QString, quit: &QString);
+        fn protonboost_tray_set_menu_title(open: &QString, quit: &QString);
 
         #[rust_name = "tray_cleanup"]
-        fn winrun_tray_cleanup();
+        fn protonboost_tray_cleanup();
 
         #[rust_name = "grab_windows"]
-        fn winrun_grab_windows(path: &QString, delay_ms: i32);
+        fn protonboost_grab_windows(path: &QString, delay_ms: i32);
     }
 }
 
