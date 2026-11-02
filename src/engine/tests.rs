@@ -224,3 +224,38 @@ fn we_release_url指向官方仓库() {
     );
     assert_eq!(super::update::release_url("ge"), None, "GE 已从产品管理移除");
 }
+
+#[test]
+fn 关闭目标覆盖服务拉起的进程() {
+    use crate::core::procs::{app_close_targets, session_host_pids, ProcEntry};
+
+    fn entry(pid: i32, ppid: i32, name: &str, app_id: &str, cmd: &str) -> ProcEntry {
+        ProcEntry {
+            pid,
+            ppid,
+            exe: cmd.to_string(),
+            name: name.to_string(),
+            command: cmd.to_string(),
+            age: String::new(),
+            app_id: app_id.to_string(),
+            app_path: String::new(),
+            log: String::new(),
+        }
+    }
+
+    let install_dir = "C:\\Program Files\\UU";
+    let procs = vec![
+        entry(100, 1, "services.exe", "", "services.exe"),                    // 会话进程
+        entry(101, 100, "uu_service.exe", "", "C:\\Program Files\\UU\\uu_service.exe"), // 服务拉起，无 APP_ID
+        entry(102, 101, "uu.exe", "", "C:\\Program Files\\UU\\uu.exe"),       // 界面进程
+        entry(103, 1, "steam.exe", "app-xyz", "C:\\Program Files\\Steam\\steam.exe"), // 其它应用，不能误杀
+        entry(104, 1, "wineserver", "", "wineserver"),                        // wineserver
+    ];
+    let hosts = session_host_pids(&procs);
+    let targets = app_close_targets(&procs, "app-uu", install_dir, &hosts);
+    let pids: Vec<i32> = targets.iter().map(|p| p.pid).collect();
+    assert!(pids.contains(&101), "服务拉起的进程应命中安装目录匹配");
+    assert!(pids.contains(&102), "界面进程应命中");
+    assert!(!pids.contains(&103), "其它应用不能误杀");
+    assert!(!pids.contains(&104), "wineserver 不能杀");
+}

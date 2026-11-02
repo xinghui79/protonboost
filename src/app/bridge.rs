@@ -87,7 +87,7 @@ pub mod ffi {
         fn run_steam_game(self: Pin<&mut Backend>, appid: &QString, path: &QString, prefix: &QString);
 
         #[qinvokable]
-        fn close_app(self: Pin<&mut Backend>, app_id: &QString, prefix: &QString);
+        fn close_app(self: Pin<&mut Backend>, app_id: &QString, app_path: &QString, prefix: &QString);
 
         #[qinvokable]
         fn kill_proc(self: Pin<&mut Backend>, pid: i32, force: bool);
@@ -763,17 +763,17 @@ impl ffi::Backend {
         jobs::refresh_after(800);
     }
 
-    pub fn close_app(mut self: Pin<&mut Self>, app_id: &QString, prefix: &QString) {
+    pub fn close_app(mut self: Pin<&mut Self>, app_id: &QString, app_path: &QString, prefix: &QString) {
         let app_id_str = app_id.to_string();
         let prefix_path = expand_path(&prefix.to_string());
         let everything = procs::scan_processes(&prefix_path);
         let hosts = procs::session_host_pids(&everything);
-        let own = procs::app_own_processes(&everything, &app_id_str, &hosts);
-        let targets: Vec<procs::ProcEntry> = {
-            let wine_only: Vec<procs::ProcEntry> =
-                own.iter().filter(|p| procs::is_wine_process(p)).cloned().collect();
-            if wine_only.is_empty() { own } else { wine_only }
-        };
+        // 安装目录：exe 所在目录；服务拉起的进程靠它识别
+        let install_dir = expand_path(&app_path.to_string())
+            .parent()
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let targets = procs::app_close_targets(&everything, &app_id_str, &install_dir, &hosts);
         let count = targets.len();
         for proc in &targets {
             let _ = procs::kill_pid(proc.pid, false);
@@ -809,14 +809,28 @@ impl ffi::Backend {
         let prefix_path = expand_path(&prefix.to_string());
         let all = procs::scan_processes(&prefix_path);
         let count = all.len();
+        // 先 SIGTERM：UU 这类带托盘的应用需要优雅退出来注销托盘图标，
+        // 直接 SIGKILL 会在桌面上留下点不掉的幽灵图标
         for proc in &all {
-            let _ = procs::kill_pid(proc.pid, true);
+            let _ = procs::kill_pid(proc.pid, false);
         }
         let zh = crate::core::loc::zh();
         self.as_mut().set_status(QString::from(format!(
             "{}: {count}",
-            if zh { "强制关闭所有进程" } else { "Force Close All Processes" }
+            if zh { "正在关闭" } else { "Closing" }
         )));
+        // 三秒后还在的全部强制结束，然后刷新界面
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_secs(3));
+            for proc in &all {
+                if let Ok(comm) = std::fs::read_to_string(format!("/proc/{}/comm", proc.pid)) {
+                    if comm.trim() == proc.name {
+                        let _ = procs::kill_pid(proc.pid, true);
+                    }
+                }
+            }
+            let _ = jobs::events().send(Event::Refresh);
+        });
         self.as_mut().refresh_page(&QString::from("procs"), prefix);
     }
 

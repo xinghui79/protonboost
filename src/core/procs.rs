@@ -171,6 +171,54 @@ pub fn app_own_processes(procs: &[ProcEntry], app_id: &str, hosts: &HashSet<i32>
         .collect()
 }
 
+/// 关闭应用的目标进程集合：APP_ID 匹配的 + 命令行/可执行文件落在应用
+/// 安装目录内的（UU 这类应用被关闭后，其 Windows 服务会重新拉起界面/
+/// 托盘进程，那些进程由 services.exe 启动、环境里没有 APP_ID，会漏判）
+/// + 上述进程的全部后代。
+pub fn app_close_targets(
+    procs: &[ProcEntry],
+    app_id: &str,
+    install_dir: &str,
+    hosts: &HashSet<i32>,
+) -> Vec<ProcEntry> {
+    let install_dir = install_dir.trim_end_matches(['/', '\\']);
+    let mut matched: Vec<&ProcEntry> = Vec::new();
+    for proc in procs {
+        if WINE_SESSION_PROCESSES.contains(&proc.name.as_str()) || hosts.contains(&proc.pid) {
+            continue;
+        }
+        let from_app_id = !app_id.is_empty() && proc.app_id == app_id;
+        let from_dir = !install_dir.is_empty()
+            && (proc.command.contains(install_dir) || proc.exe.contains(install_dir));
+        if from_app_id || from_dir {
+            matched.push(proc);
+        }
+    }
+
+    // 后代追踪：按 ppid 递归收集派生进程
+    let mut children: std::collections::HashMap<i32, Vec<i32>> = std::collections::HashMap::new();
+    for proc in procs {
+        children.entry(proc.ppid).or_default().push(proc.pid);
+    }
+    let mut seen: std::collections::HashSet<i32> = matched.iter().map(|p| p.pid).collect();
+    let mut queue: Vec<i32> = seen.iter().copied().collect();
+    while let Some(pid) = queue.pop() {
+        if let Some(kids) = children.get(&pid) {
+            for kid in kids {
+                if seen.insert(*kid) {
+                    queue.push(*kid);
+                }
+            }
+        }
+    }
+
+    procs
+        .iter()
+        .filter(|proc| seen.contains(&proc.pid))
+        .cloned()
+        .collect()
+}
+
 /// 运行中的应用：app_id → pids/log/path
 pub fn running_apps_for_prefix(prefix: &Path) -> HashMap<String, (Vec<i32>, String, String)> {
     let mut running: HashMap<String, (Vec<i32>, String, String)> = HashMap::new();

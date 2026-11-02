@@ -1467,7 +1467,7 @@ ApplicationWindow {
                                 WDangerButton {
                                     visible: modelData.running
                                     text: root.zh ? "关闭" : "Close"
-                                    onClicked: backend.close_app(modelData.appId, root.appsPrefix)
+                                    onClicked: backend.close_app(modelData.appId, modelData.path, root.appsPrefix)
                                 }
 
                                 WIconButton {
@@ -1685,7 +1685,7 @@ ApplicationWindow {
                 WDangerButton {
                     visible: pane.app && pane.app.running
                     text: root.zh ? "关闭" : "Close"
-                    onClicked: backend.close_app(pane.app.appId, root.appsPrefix)
+                    onClicked: backend.close_app(pane.app.appId, pane.app.path, root.appsPrefix)
                 }
                 WButton {
                     visible: pane.app && pane.app.canConfig
