@@ -147,17 +147,9 @@ pub fn prefix_netns_enabled(prefix: &Path) -> bool {
 }
 
 /// 写前缀自己的网络开关（`$PREFIX/.protonboost.conf`）
+/// 实际逻辑在 `core::prefix::set_netns`，这里是启动链路的便捷入口
 pub fn set_prefix_netns(prefix: &Path, enabled: bool) {
-    let file = prefix.join(".protonboost.conf");
-    let existing = std::fs::read_to_string(&file).unwrap_or_default();
-    let mut lines: Vec<String> = existing
-        .lines()
-        .filter(|line| !line.trim().is_empty() && !line.trim_start().starts_with("netns="))
-        .map(|line| line.to_string())
-        .collect();
-    lines.push(format!("netns={}", if enabled { 1 } else { 0 }));
-    let _ = std::fs::create_dir_all(prefix);
-    let _ = std::fs::write(&file, lines.join("\n") + "\n");
+    let _ = crate::core::prefix::set_netns(prefix, enabled);
 }
 
 /// 启动一次性的会话信息，给 launch 拼命令用
@@ -425,7 +417,7 @@ fn namespace_mac_address() -> String {
     }
     let machine_id = std::fs::read_to_string("/etc/machine-id").unwrap_or_default();
     let mut hasher = Sha256::new();
-    hasher.update(format!("wegame-launcher netns {machine_id}").as_bytes());
+    hasher.update(format!("protonboost netns {machine_id}").as_bytes());
     let digest = format!("{:x}", hasher.finalize());
     let first = (u8::from_str_radix(&digest[0..2], 16).unwrap_or(0) & 0xfc) | 0x02;
     format!(
@@ -504,7 +496,7 @@ fn cleanup(dir: &Path) {
 }
 
 /// 给每个 DNS 服务器钉一条走当前网卡的宿主路由：加速器 TUN 模式会把所有
-/// 求情都塞进它的网卡，几百次之后节点不再应答，游戏的域名就解析不出来了。
+/// 请求都塞进它的网卡，几百次之后节点不再应答，游戏的域名就解析不出来了。
 fn pin_nameserver_routes() {
     let Ok(text) = std::fs::read_to_string("/etc/resolv.conf") else {
         return;
@@ -547,6 +539,7 @@ fn hold_session_lock(dir: &Path) -> Option<std::fs::File> {
     let path = dir.join("lock");
     let file = std::fs::OpenOptions::new()
         .create(true)
+        .truncate(false)
         .read(true)
         .write(true)
         .open(path)

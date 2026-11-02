@@ -19,9 +19,10 @@ pub fn notify_existing() -> bool {
         stream.set_read_timeout(Some(std::time::Duration::from_millis(500)))?;
         stream.write_all(b"show\n")?;
         let mut buf = [0u8; 8];
-        // 等对方回一个确认，确认它真的活着
+        // 等对方回一个确认，确认它真的活着（没读到字节 = 对端没确认）
         match stream.read(&mut buf) {
-            Ok(_) => Ok(()),
+            Ok(n) if n > 0 => Ok(()),
+            Ok(_) => Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "no ack")),
             Err(err) => Err(err),
         }
     });
