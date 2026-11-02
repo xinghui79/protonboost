@@ -28,7 +28,7 @@
 - Rust（构建用）、Qt 6：`qt6-base` `qt6-declarative` `qt6-svg`
 - 运行时：`passt`（独立网络）、`util-linux`（nsenter / unshare）、`curl` + `tar`（下载运行器/运行时）、`sha512sum`（校验下载）
 - 可选：`wine`（系统 Wine 运行器）、`icoextract`（图标提取）、`notify-send`（运行通知）、`gamescope` / `mangohud`（按需启用）；构建机需要 `cc`（覆盖层辅助库在构建期编译嵌入）
-- 运行器：GE-Proton（界面里一键下载，默认）或任意一份 Proton / Wine，详见下面「运行器」一节
+- 运行器：WE-Proton（界面里一键下载，默认；自带 wintun，跑加速器必需）或任意一份 Proton / Wine，详见下面「运行器」一节
 
 ## 安装
 
@@ -157,9 +157,10 @@ protonboost --version              # 版本
 不绑定任何特定版本，每个程序可以在运行设置里单独选。Proton 系的还需要 Steam Linux
 Runtime（`SteamLinuxRuntime_sniper` / `soldier`），本机没有的话会自动下载。
 
-一个都没有时，应用页会显示一条提示，点「下载 GE-Proton」会取最新版装到
+一个都没有时，应用页会显示一条提示，点「下载 WE-Proton」会取最新版装到
 `~/.local/share/Steam/compatibilitytools.d/`；也可以自己装系统 wine 或 Steam 的 Proton，
-重启管理器就会列出来。
+重启管理器就会列出来。WE-Proton（SHORiN-KiWATA 基于 GE/DW 的魔改）自带 wintun，
+是加速器在独立网络里能建 TUN 的关键——加速器请固定用 WE-Proton。
 
 ## 独立网络
 

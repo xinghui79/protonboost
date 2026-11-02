@@ -202,3 +202,25 @@ fn 镜像列表包含直连兜底() {
     let list = super::update::mirrors();
     assert!(list.iter().any(|m| m.is_empty()), "直连必须在列表里");
 }
+
+#[test]
+fn we_proton资产解析() {
+    // SHORiN-KiWATA/we-proton 的 release 资产形态
+    let body = r#"{"tag_name":"we-proton-ge11-11-31","assets":[
+        {"name":"we-proton-ge11-11-31-source.tar.xz","browser_download_url":"https://example/source"},
+        {"name":"we-proton-ge11-11-31.tar.xz","browser_download_url":"https://example/archive"},
+        {"name":"we-proton-ge11-11-31.sha512sum","browser_download_url":"https://example/sha"}]}"#;
+    let release = super::update::parse_release("we", body.as_bytes()).expect("应解析出 release");
+    assert_eq!(release.tag, "we-proton-ge11-11-31");
+    assert_eq!(release.archive_name, "we-proton-ge11-11-31.tar.xz");
+    assert_eq!(release.checksum_url, "https://example/sha");
+}
+
+#[test]
+fn we_release_url指向官方仓库() {
+    assert_eq!(
+        super::update::release_url("we").as_deref(),
+        Some("https://api.github.com/repos/SHORiN-KiWATA/we-proton/releases/latest")
+    );
+    assert_eq!(super::update::release_url("ge"), None, "GE 已从产品管理移除");
+}

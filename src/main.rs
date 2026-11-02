@@ -74,7 +74,7 @@ fn doctor() {
     let runners = engine::runners::discover();
     if runners.is_empty() {
         println!("  [缺] 一个都没找到。程序启动需要 Proton 或 Wine。");
-        println!("       在管理器里点「下载 GE-Proton」，或自己装系统 wine。");
+        println!("       在管理器里点「下载 WE-Proton」，或自己装系统 wine。");
     } else {
         for runner in &runners {
             println!("  [有] {:<20} {} ({})", runner.name, runner.path, runner.kind);

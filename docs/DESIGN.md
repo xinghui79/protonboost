@@ -33,7 +33,7 @@ src/
     launch.rs         环境变量与命令行的组装、进程拉起
     overlay.rs        Steam 覆盖层的 uid 辅助库
     steam_forward.rs  命名空间里的游戏连宿主 Steam 客户端（57343）
-    update.rs         GE-Proton 的在线安装与更新
+    update.rs         WE-Proton 的在线安装与更新
     logs.rs           运行日志
 native/overlay-uid/   覆盖层辅助库的 C 源码（构建期编译嵌入）
 qml/Main.qml          全部界面
@@ -49,7 +49,8 @@ qml/Main.qml          全部界面
 
 ## 运行器
 
-- **GE-Proton 是唯一在线安装项**：GitHub releases 取最新版（直连失败自动换镜像，
+- **WE-Proton 是唯一在线安装项**（SHORiN-KiWATA 基于 GE/DW 的魔改，自带 wintun，
+  加速器的 NDIS 内核驱动在 Wine 里没有实现）：GitHub releases 取最新版（直连失败自动换镜像，
   `PROTONBOOST_GH_MIRROR` 可指定），下载 → sha512 流式校验 →
   解压到 `compatibilitytools.d/Proton-GE Latest/`，界面一键完成
 - 本地手动安装的运行器（WE-Proton、lutris wine、系统 wine、Steam 自带 Proton）

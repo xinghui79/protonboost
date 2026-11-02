@@ -1314,8 +1314,8 @@ ApplicationWindow {
                         Text {
                             Layout.fillWidth: true
                             text: root.zh
-                                  ? "没有找到 Proton / Wine 运行器，程序启动不了。可以先下载一个 GE-Proton（约 400 MB）。"
-                                  : "No Proton / Wine runner found. Download GE-Proton to get started (~400 MB)."
+                                  ? "没有找到 Proton / Wine 运行器，程序启动不了。可以先下载一个 WE-Proton（约 345 MB，自带 wintun，加速器必需）。"
+                                  : "No Proton / Wine runner found. Download WE-Proton to get started (~345 MB, wintun included)."
                             color: c.accent
                             font.pixelSize: 12
                             wrapMode: Text.WordWrap
@@ -1323,11 +1323,11 @@ ApplicationWindow {
                         WButton {
                             outlined: true
                             implicitHeight: 28
-                            text: root.zh ? "下载 GE-Proton" : "Download GE-Proton"
+                            text: root.zh ? "下载运行器" : "Download Runner"
                             onClicked: root.confirm(
-                                root.zh ? "下载 GE-Proton" : "Download GE-Proton",
+                                root.zh ? "下载运行器" : "Download Runner",
                                 (root.zh ? "会下载 " : "Will download ")
-                                + (backend.update_details !== "" ? backend.update_details : "GE-Proton")
+                                + (backend.update_details !== "" ? backend.update_details : "WE-Proton")
                                 + (root.zh
                                    ? "\n\nGitHub 直连失败会自动换镜像重试；也可设 PROTONBOOST_GH_MIRROR 指定加速镜像。\n解压到 ~/.local/share/Steam/compatibilitytools.d/，占约 1.6 GB。需要几分钟，期间界面照常可用。"
                                    : "\n\nIf GitHub is unreachable, a mirror is tried automatically; set PROTONBOOST_GH_MIRROR to choose one.\nInstalled into ~/.local/share/Steam/compatibilitytools.d/ (~1.6 GB)."),
@@ -2521,8 +2521,8 @@ ApplicationWindow {
                             visible: root.runnersModel.length === 0
                             Layout.fillWidth: true
                             text: root.zh
-                                  ? "没有找到 Proton / Wine，保存后也启动不了；先在应用页下载一个 GE-Proton。"
-                                  : "No Proton / Wine found — download GE-Proton from the Apps page first."
+                                  ? "没有找到 Proton / Wine，保存后也启动不了；先在应用页下载一个 WE-Proton。"
+                                  : "No Proton / Wine found — download WE-Proton from the Apps page first."
                             color: c.danger
                             font.pixelSize: 11
                             wrapMode: Text.WordWrap

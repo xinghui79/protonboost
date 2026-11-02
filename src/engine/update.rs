@@ -1,5 +1,6 @@
-//! GE-Proton 的版本检查与安装：开箱即用只需要在界面里点一次「下载」。
-//! WE-Proton 是本地手动安装的兼容项，没有在线安装/更新。
+//! WE-Proton 的版本检查与安装：开箱即用只需要在界面里点一次「下载」。
+//! WE-Proton（SHORiN-KiWATA 基于 GE/DW 的魔改）自带 wintun，是加速器
+//! 场景的唯一在线运行器——NDIS 内核驱动在 Wine 里没有实现。
 
 use crate::core::paths::cache_home;
 use crate::engine::runners::{local_runner_dir, product_dir_name, steam_runner_dir};
@@ -39,9 +40,11 @@ fn installed_version(dir: &Path) -> String {
     dir.file_name().and_then(|name| name.to_str()).unwrap_or_default().to_string()
 }
 
-fn release_url(product: &str) -> Option<String> {
+pub(crate) fn release_url(product: &str) -> Option<String> {
     match product {
-        "ge" => Some("https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases/latest".into()),
+        // WE-Proton：SHORiN-KiWATA 基于 GE/DW 的魔改，自带 wintun——
+        // 加速器的 NDIS 内核驱动在 Wine 里没有实现，wintun 是唯一可行通路
+        "we" => Some("https://api.github.com/repos/SHORiN-KiWATA/we-proton/releases/latest".into()),
         _ => None,
     }
 }
@@ -106,7 +109,7 @@ pub fn latest_release(product: &str) -> Option<Release> {
     parse_release(product, &body)
 }
 
-fn parse_release(product: &str, body: &[u8]) -> Option<Release> {
+pub(crate) fn parse_release(_product: &str, body: &[u8]) -> Option<Release> {
     let data: serde_json::Value = serde_json::from_slice(body).ok()?;
     let tag = data
         .get("tag_name")
@@ -115,8 +118,10 @@ fn parse_release(product: &str, body: &[u8]) -> Option<Release> {
         .unwrap_or("latest")
         .to_string();
 
-    let archive_suffixes: &[&str] = if product == "ge" { &[".tar.gz"] } else { &["x86_64.tar.xz"] };
-    let checksum_suffix = if product == "ge" { ".sha512sum" } else { "x86_64.sha512sum" };
+    // WE-Proton 资产：we-proton-<tag>.tar.xz + 同名 .sha512sum；
+    // source 包靠排除 -source 前缀区分
+    let archive_suffixes: &[&str] = &[".tar.xz"];
+    let checksum_suffix = ".sha512sum";
 
     let assets = data.get("assets")?.as_array()?;
     let mut archive: Option<(String, String)> = None;
@@ -178,8 +183,8 @@ pub fn check() -> Vec<Candidate> {
     let mut found: Vec<Candidate> = Vec::new();
     // 机器上一个 Proton / Wine 都没有：这时把「装 GE-Proton」也当成一条待办，
     // 否则界面上根本没有下载运行器的入口，程序永远跑不起来。
-    let no_runner = crate::engine::runners::discover().is_empty();
-    for product in ["ge"] {
+    let _ = crate::engine::runners::discover().is_empty();
+    for product in ["we"] {
         let Some(dir_name) = product_dir_name(product) else { continue };
         let targets: Vec<PathBuf> = install_dirs()
             .into_iter()
@@ -187,15 +192,15 @@ pub fn check() -> Vec<Candidate> {
             .filter(|dir| dir.exists())
             .collect();
         if targets.is_empty() {
-            if no_runner && product == "ge" {
-                if let Some(release) = latest_release(product) {
-                    found.push(Candidate {
-                        product: product.to_string(),
-                        target: steam_runner_dir().join(dir_name),
-                        current: String::new(),
-                        latest: release.tag.clone(),
-                    });
-                }
+            // 未安装 WE-Proton：始终给出下载候选（加速器的 NDIS 内核驱动
+            // 在 Wine 里没有实现，UU 这类加速器必须走 WE 的 wintun 路线）
+            if let Some(release) = latest_release(product) {
+                found.push(Candidate {
+                    product: product.to_string(),
+                    target: steam_runner_dir().join(dir_name),
+                    current: String::new(),
+                    latest: release.tag.clone(),
+                });
             }
             continue;
         }
@@ -304,7 +309,8 @@ pub fn describe(candidates: &[Candidate]) -> String {
         .iter()
         .map(|candidate| {
             let current = if candidate.current.is_empty() { "—".to_string() } else { candidate.current.clone() };
-            format!("GE-Proton: {current} → {}", candidate.latest)
+            let label = "WE-Proton";
+            format!("{label}: {current} → {}", candidate.latest)
         })
         .collect::<Vec<_>>()
         .join("\n")

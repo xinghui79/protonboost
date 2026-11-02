@@ -18,7 +18,7 @@ pub struct Runner {
     pub path: String,
 }
 
-pub const DEFAULT_PRODUCT: &str = "ge";
+pub const DEFAULT_PRODUCT: &str = "we";
 
 pub fn steam_runner_dir() -> PathBuf {
     home().join(".local/share/Steam/compatibilitytools.d")
@@ -205,7 +205,7 @@ pub fn discover() -> Vec<Runner> {
     let steam_dir = home().join(".local/share/Steam");
     let steam_root = home().join(".steam/root");
     let local_dir = local_runner_dir();
-    let default_dir = product_dir_name(DEFAULT_PRODUCT).unwrap_or("Proton-GE Latest");
+    let default_dir = product_dir_name(DEFAULT_PRODUCT).unwrap_or("WE-Proton Latest");
 
     for variable in ["PROTONBOOST_RUNNER", "PROTON_GE_PATH"] {
         if let Ok(value) = std::env::var(variable) {
@@ -223,8 +223,8 @@ pub fn discover() -> Vec<Runner> {
     }
 
     for base in [steam_dir.join("compatibilitytools.d"), steam_root.join("compatibilitytools.d")] {
-        // GE 已作为默认产品排最前；WE 是本地手动安装时的兼容项
-        collector.add("proton", "steam", &base.join("WE-Proton Latest").join("proton"));
+        // GE-Proton Latest 已不是默认产品，但已安装的用户仍可被发现
+        collector.add("proton", "steam", &base.join("Proton-GE Latest").join("proton"));
         collector.add_glob("proton", "steam", &base, "proton");
     }
     collector.add_glob("proton", "local", &local_dir, "proton");
