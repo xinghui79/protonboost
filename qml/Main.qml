@@ -1039,6 +1039,8 @@ ApplicationWindow {
         id: group
         clip: true
         spacing: 0
+        reuseItems: true
+        cacheBuffer: 960
         width: parent ? parent.width : 0
         visible: count > 0
 
@@ -1133,6 +1135,8 @@ ApplicationWindow {
             fillMode: Image.PreserveAspectFit
             smooth: true
             mipmap: true
+            asynchronous: true
+            sourceSize: Qt.size(parent.size * 2, parent.size * 2)
             visible: status === Image.Ready
         }
     }

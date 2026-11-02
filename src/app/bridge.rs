@@ -1237,9 +1237,9 @@ impl ffi::Backend {
             rust.update_running = true;
         }
         self.as_mut().set_status(QString::from(if zh {
-            "正在下载 WE-Proton（约 345 MB），可能要几分钟…"
+            "正在下载 WE-Proton，可能要几分钟…"
         } else {
-            "Downloading WE-Proton (~345 MB), this may take a few minutes…"
+            "Downloading WE-Proton, this may take a few minutes…"
         }));
         jobs::send(Job::UpdateRun);
     }
