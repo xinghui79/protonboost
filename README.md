@@ -122,18 +122,9 @@ Runtime（`SteamLinuxRuntime_sniper` / `soldier`），本机没有的话会自�
 ## 独立网络
 
 在侧栏把当前前缀右边那个小开关点亮，就给它开了独立网络（等价于在
-`$PREFIX/.protonboost.conf` 里写 `netns=1`），下次启动生效。
-
-前缀开了独立网络后，`pasta` 建一个 network namespace，keeper 进程待在里面把网络撑住，
-程序用 `nsenter` 进去；前缀里最后一个程序退出，keeper 跟着收摊。把 Windows 版加速器
-（网易 UU 的「路由模式」、雷神的「模式三」）和游戏装进同一个前缀，加速器接管的就是
-游戏所在的网络。
-
-### Linux 程序也能进这个网络
-
-`pasta` 会把用户映射成命名空间里的 root，Steam 这类程序检查到 `uid 0` 就拒绝运行
-（`Cannot run as root user`）。所以 Linux 程序进会话时会**再套一层 user namespace**
-（`unshare -U --map-user=<你的真实 uid>`），在里面它就是普通用户，Steam 照常能跑。
+`$PREFIX/.protonboost.conf` 里写 `netns=1`），下次启动生效。把 Windows 版加速器
+（网易 UU 的「路由模式」、雷神的「模式三」）和游戏装进同一个前缀，加速器接管的
+就是游戏所在的网络；关掉开关就回到宿主网络。
 
 ### Steam 游戏
 
@@ -143,18 +134,11 @@ Runtime（`SteamLinuxRuntime_sniper` / `soldier`），本机没有的话会自�
 protonboost --exec %command%
 ```
 
-`%command%` 里 Steam 自己的运行器前缀会被剥掉，游戏改为在 ProtonBoost 的前缀里跑——
-于是它和加速器共享同一个独立网络。Windows 版 Steam（装在同一个前缀里的那份）
-也一样适用。
+游戏会改在 ProtonBoost 的前缀里跑，和加速器共享同一个独立网络；Windows 版 Steam
+（装在同一个前缀里的那份）也一样适用。
 
-游戏通过 `127.0.0.1:57343` 找 Steam 客户端；独立网络里这个地址是命名空间自己的
-回环，keeper 会把连接转给宿主上的 Steam 客户端。
-
-Steam 覆盖层（FPS、成就）要靠 `getuid()` 找宿主客户端。命名空间里 Wine 是 root、
-宿主客户端是普通用户，两边对不上，覆盖层会悄悄失效。ProtonBoost 把一个很小的辅助库
-在**构建期编译好嵌进二进制**（`native/overlay-uid/`），预加载进游戏后只让覆盖层
-看到真实 uid——用户机器上不需要装 C 编译器。只有在特殊架构上构建时才会回退到
-现场用 `cc` 编译。
+> 网络命名空间的实现细节——keeper 生命周期、Linux 程序降权、Steam 客户端端口转发、
+> 覆盖层 uid 辅助库、D-Bus 会话桥——见 [`docs/DESIGN.md`](docs/DESIGN.md)。
 
 ## 构建
 
@@ -169,35 +153,10 @@ cargo build --release  # 发布版
 
 ## 代码结构
 
-```
-src/main.rs              启动流程、命令行模式、单实例、托盘
-src/app/                 QML 后端 + 任务线程（cxx-qt 要求桥接文件同目录）
-  bridge.rs              Backend：属性 + invokable，QML 的唯一数据源
-  jobs.rs                工作线程 + 结果通道（扫描/图标/启动/更新）
-  ipc.rs                 单实例：unix 套接字唤起已运行的窗口
-  shim.cpp .h            QApplication、托盘、图标转换、无头截图
-src/engine/              启动引擎
-  runners.rs             发现 Proton / Wine
-  runtime.rs             Proton 需要的 Steam Linux Runtime
-  session.rs             前缀会话与独立网络（pasta + keeper）
-  overlay.rs             Steam 覆盖层的 uid 辅助库（现场编译的小 .so）
-  steam_forward.rs       命名空间里的游戏连宿主 Steam 客户端（57343）
-  launch.rs              拼环境变量与命令行、启动、写日志
-  logs.rs                运行日志位置
-  update.rs              GE / DW 运行器版本检查与安装
-src/core/                扫描、.lnk 解析、图标、配置、进程、导出
-qml/Main.qml             界面
-assets/applications/     桌面入口（.desktop）
-assets/icons/            图标（PNG + SVG）
-native/overlay-uid/      覆盖层辅助库的 C 源码（构建期编译嵌入）
-packaging/               打包文件（PKGBUILD）
-docs/                    设计文档
-```
+项目结构、每个模块的职责与关键机制的设计考量见 [`docs/DESIGN.md`](docs/DESIGN.md)。
 
-开发提示：只改 QML 也可以直接 `cargo build`——`build.rs` 把 QML 内容哈希塞进
-`rustc-env`，内容一变就会重新编译并重链接。
-
-无头验收（不开窗口也能看界面）：
+只改 QML 直接 `cargo build` 就能重链——`build.rs` 把 QML 内容哈希塞进 rustc-env，
+内容一变就会重新编译。无头验收（不开窗口也能看界面）：
 
 ```bash
 QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software \
