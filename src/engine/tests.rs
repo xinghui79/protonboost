@@ -187,3 +187,18 @@ fn 路径展开支持家目录() {
     assert!(expand_path("~/x").starts_with(std::env::var("HOME").unwrap_or_default()));
     assert_eq!(expand_path("/abs/path"), std::path::Path::new("/abs/path"));
 }
+
+#[test]
+fn 镜像代理拼接() {
+    assert_eq!(super::update::proxied("", "https://github.com/a/b"), "https://github.com/a/b");
+    assert_eq!(
+        super::update::proxied("https://gh-proxy.com", "https://github.com/a/b"),
+        "https://gh-proxy.com/https://github.com/a/b"
+    );
+}
+
+#[test]
+fn 镜像列表包含直连兜底() {
+    let list = super::update::mirrors();
+    assert!(list.iter().any(|m| m.is_empty()), "直连必须在列表里");
+}

@@ -1326,11 +1326,11 @@ ApplicationWindow {
                             text: root.zh ? "下载 GE-Proton" : "Download GE-Proton"
                             onClicked: root.confirm(
                                 root.zh ? "下载 GE-Proton" : "Download GE-Proton",
-                                (root.zh ? "会从 GitHub 取 " : "Will download ")
+                                (root.zh ? "会下载 " : "Will download ")
                                 + (backend.update_details !== "" ? backend.update_details : "GE-Proton")
                                 + (root.zh
-                                   ? "\n\n解压到 ~/.local/share/Steam/compatibilitytools.d/，占约 1.6 GB。需要几分钟，期间界面照常可用。"
-                                   : "\n\nInstalled into ~/.local/share/Steam/compatibilitytools.d/ (~1.6 GB)."),
+                                   ? "\n\nGitHub 直连失败会自动换镜像重试；也可设 PROTONBOOST_GH_MIRROR 指定加速镜像。\n解压到 ~/.local/share/Steam/compatibilitytools.d/，占约 1.6 GB。需要几分钟，期间界面照常可用。"
+                                   : "\n\nIf GitHub is unreachable, a mirror is tried automatically; set PROTONBOOST_GH_MIRROR to choose one.\nInstalled into ~/.local/share/Steam/compatibilitytools.d/ (~1.6 GB)."),
                                 function () { backend.update_runners_now() })
                         }
                     }

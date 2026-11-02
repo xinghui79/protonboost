@@ -49,7 +49,8 @@ qml/Main.qml          全部界面
 
 ## 运行器
 
-- **GE-Proton 是唯一在线安装项**：GitHub releases 取最新版，下载 → sha512 校验 →
+- **GE-Proton 是唯一在线安装项**：GitHub releases 取最新版（直连失败自动换镜像，
+  `PROTONBOOST_GH_MIRROR` 可指定），下载 → sha512 流式校验 →
   解压到 `compatibilitytools.d/Proton-GE Latest/`，界面一键完成
 - 本地手动安装的运行器（WE-Proton、lutris wine、系统 wine、Steam 自带 Proton）
   照样被发现并可用，只是不提供在线更新

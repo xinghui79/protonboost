@@ -115,7 +115,7 @@ protonboost --doctor               # 环境诊断：缺什么命令、运行器�
 不绑定任何特定版本，每个程序可以在运行设置里单独选。Proton 系的还需要 Steam Linux
 Runtime（`SteamLinuxRuntime_sniper` / `soldier`），本机没有的话会自动下载。
 
-一个都没有时，应用页会显示一条提示，点「下载 GE-Proton」会从 GitHub 取最新版装到
+一个都没有时，应用页会显示一条提示，点「下载 GE-Proton」会取最新版装到
 `~/.local/share/Steam/compatibilitytools.d/`；也可以自己装系统 wine 或 Steam 的 Proton，
 重启管理器就会列出来。
 

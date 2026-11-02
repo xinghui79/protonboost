@@ -64,10 +64,50 @@ fn fetch(url: &str) -> Option<Vec<u8>> {
     output.status.success().then_some(output.stdout)
 }
 
+/// GitHub 直连在部分网络（尤其国内）很慢甚至超时。下载相关的每一步都先直连、
+/// 失败后按顺序换镜像重试。gh-proxy 风格镜像的用法是把完整 URL 接在镜像域名后面。
+const GH_MIRRORS: &[&str] = &["", "https://ghfast.top", "https://gh-proxy.com", "https://ghproxy.net"];
+
+/// 生效的镜像列表：PROTONBOOST_GH_MIRROR 指定的自定义镜像排最前，空串表示直连
+pub(crate) fn mirrors() -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    if let Ok(value) = std::env::var("PROTONBOOST_GH_MIRROR") {
+        let value = value.trim().trim_end_matches('/').to_string();
+        if !value.is_empty() {
+            out.push(value);
+        }
+    }
+    out.extend(GH_MIRRORS.iter().map(|m| m.to_string()));
+    out
+}
+
+/// 把 GitHub URL 换成经镜像代理的形式（直连时原样返回）
+pub(crate) fn proxied(mirror: &str, url: &str) -> String {
+    if mirror.is_empty() {
+        url.to_string()
+    } else {
+        format!("{mirror}/{url}")
+    }
+}
+
+/// 任一镜像取到就返回；都失败返回 None
+fn fetch_any(url: &str) -> Option<Vec<u8>> {
+    for mirror in mirrors() {
+        if let Some(body) = fetch(&proxied(&mirror, url)) {
+            return Some(body);
+        }
+    }
+    None
+}
+
 pub fn latest_release(product: &str) -> Option<Release> {
     let url = release_url(product)?;
-    let body = fetch(&url)?;
-    let data: serde_json::Value = serde_json::from_slice(&body).ok()?;
+    let body = fetch_any(&url)?;
+    parse_release(product, &body)
+}
+
+fn parse_release(product: &str, body: &[u8]) -> Option<Release> {
+    let data: serde_json::Value = serde_json::from_slice(body).ok()?;
     let tag = data
         .get("tag_name")
         .or_else(|| data.get("name"))
@@ -194,18 +234,26 @@ pub fn install(candidates: &[Candidate]) -> Result<usize, String> {
             return Err(format!("查不到 {} 的最新版本", candidate.product));
         };
         let archive = downloads.join(&release.archive_name);
-        let downloaded = Command::new("curl")
-            .args(["-fsSL", "--connect-timeout", "30", "-o"])
-            .arg(&archive)
-            .arg(&release.archive_url)
-            .status()
-            .map(|status| status.success())
-            .unwrap_or(false);
+        // 先直连，失败后按顺序换镜像——国内直连 GitHub 通常很慢
+        let mut downloaded = false;
+        for mirror in mirrors() {
+            let _ = std::fs::remove_file(&archive);
+            downloaded = Command::new("curl")
+                .args(["-fsSL", "--connect-timeout", "30", "-o"])
+                .arg(&archive)
+                .arg(proxied(&mirror, &release.archive_url))
+                .status()
+                .map(|status| status.success())
+                .unwrap_or(false);
+            if downloaded {
+                break;
+            }
+        }
         if !downloaded {
             return Err(format!("下载失败：{}", release.archive_name));
         }
 
-        if let Some(expected) = fetch(&release.checksum_url)
+        if let Some(expected) = fetch_any(&release.checksum_url)
             .and_then(|body| String::from_utf8(body).ok())
             .and_then(|text| text.split_whitespace().next().map(|value| value.to_string()))
         {
