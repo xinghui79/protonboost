@@ -259,3 +259,24 @@ fn 关闭目标覆盖服务拉起的进程() {
     assert!(!pids.contains(&103), "其它应用不能误杀");
     assert!(!pids.contains(&104), "wineserver 不能杀");
 }
+
+#[test]
+fn 安装目录匹配不吃兄弟目录() {
+    use crate::core::procs::mentions_path_under;
+
+    let dir = "/home/u/prefix/pfx/drive_c/Program Files/Game";
+    assert!(mentions_path_under(&format!("{dir}/game.exe"), dir), "正下的 exe 应命中");
+    assert!(mentions_path_under(&format!("\"{dir}\\game.exe\" -launch"), dir), "带引号的参数应命中");
+    assert!(mentions_path_under(dir, dir), "等于目录本身应命中");
+    assert!(mentions_path_under(&format!("--dir={dir}"), dir), "键值对里的路径应命中");
+    assert!(
+        !mentions_path_under("/home/u/prefix/pfx/drive_c/Program Files/Game2/game.exe", dir),
+        "兄弟目录 Game2 不能被 Game 连坐"
+    );
+    assert!(
+        !mentions_path_under("/home/u/prefix/pfx/drive_c/Program Files/GameCenter/game.exe", dir),
+        "更长的目录名不能被连坐"
+    );
+    assert!(!mentions_path_under("/x/y", ""), "空目录不匹配");
+    assert!(!mentions_path_under("", dir), "空命令行不匹配");
+}

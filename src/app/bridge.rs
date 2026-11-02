@@ -215,7 +215,10 @@ pub struct BackendRust {
     req_dirs: u64,
     req_procs: u64,
     req_linux: u64,
-    icons_requested: HashSet<String>,
+    req_exes: u64,
+    /// 正在启动的 label：启动流程要数秒，双击不该拉起两份
+    pending_launches: HashSet<String>,
+    last_check_ms: u64,
     status_deadline_ms: u64,
     update_running: bool,
 }
@@ -339,6 +342,8 @@ impl ffi::Backend {
             self.as_mut().set_status(QString::from(""));
         }
 
+        // 同一批轮询里到的图标合并成一次列表重建：每个图标各刷一遍是 O(n²)
+        let mut icon_updates: Vec<(String, String)> = Vec::new();
         while let Some(message) = jobs::try_result() {
             match message {
                 jobs::ResultMsg::Apps { req, items, apps } => {
@@ -375,36 +380,7 @@ impl ffi::Backend {
                     if req != self.as_mut().rust_mut().req_apps || icon == "protonboost" {
                         continue;
                     }
-                    // 把解析出的图标写回应用列表
-                    let mut updated = QVariantList::default();
-                    let count = self.apps().len();
-                    for index in 0..count {
-                        let item = match self.apps().get(index) {
-                            Some(item) => item.clone(),
-                            None => continue,
-                        };
-                        let mut replaced = item.clone();
-                        if let Some(map) = item.value::<QVariantMap>() {
-                            let matches = map
-                                .get(&QString::from("appId"))
-                                .and_then(|value| value.value::<QString>())
-                                .map(|value| value.to_string() == app_id)
-                                .unwrap_or(false);
-                            if matches {
-                                let mut new_map: QVariantMap = QMap::default();
-                                for (key, value) in map.iter() {
-                                    if key.to_string() == "icon" {
-                                        new_map.insert(QString::from("icon"), qvar_str(&icon));
-                                    } else {
-                                        new_map.insert(key.clone(), value.clone());
-                                    }
-                                }
-                                replaced = QVariant::from(&new_map);
-                            }
-                        }
-                        updated.append(replaced);
-                    }
-                    self.as_mut().set_apps(updated);
+                    icon_updates.push((app_id, icon));
                 }
                 jobs::ResultMsg::Dirs { req, items } => {
                     if req != self.as_mut().rust_mut().req_dirs {
@@ -463,7 +439,12 @@ impl ffi::Backend {
                     );
                     self.as_mut().set_linux_apps(list);
                 }
-                jobs::ResultMsg::Exes { title, items } => {
+                jobs::ResultMsg::Exes { req, title, items } => {
+                    // 扫大目录要几秒，期间用户可能已经点了别的目录：
+                    // 过期结果直接丢弃，不弹层
+                    if req != self.as_mut().rust_mut().req_exes {
+                        continue;
+                    }
                     let list = build_list(
                         items
                             .iter()
@@ -481,6 +462,7 @@ impl ffi::Backend {
                     push_event(self.as_mut(), "exes");
                 }
                 jobs::ResultMsg::Launch { label, result } => {
+                    self.as_mut().rust_mut().pending_launches.remove(&label);
                     let zh = crate::core::loc::zh();
                     match result {
                         Ok(notes) => {
@@ -541,7 +523,50 @@ impl ffi::Backend {
                     let prefix = self.as_mut().rust_mut().current_prefix.clone();
                     self.as_mut().refresh_apps_now(&prefix);
                 }
+                Event::Status(text) => self.as_mut().set_status(QString::from(text)),
+                Event::ReloadPrefixes => self.as_mut().reload_prefixes(),
+                Event::RefreshPage { page, prefix } => {
+                    self.as_mut()
+                        .refresh_page(&QString::from(page), &QString::from(prefix));
+                }
             }
+        }
+
+        // 图标统一写回：这一批轮询里攒下的结果一次重建列表
+        if !icon_updates.is_empty() {
+            let updates: std::collections::HashMap<&str, &str> = icon_updates
+                .iter()
+                .map(|(app_id, icon)| (app_id.as_str(), icon.as_str()))
+                .collect();
+            let mut updated = QVariantList::default();
+            let count = self.apps().len();
+            for index in 0..count {
+                let item = match self.apps().get(index) {
+                    Some(item) => item.clone(),
+                    None => continue,
+                };
+                let mut replaced = item.clone();
+                if let Some(map) = item.value::<QVariantMap>() {
+                    let app_id = map
+                        .get(&QString::from("appId"))
+                        .and_then(|value| value.value::<QString>())
+                        .map(|value| value.to_string())
+                        .unwrap_or_default();
+                    if let Some(icon) = updates.get(app_id.as_str()) {
+                        let mut new_map: QVariantMap = QMap::default();
+                        for (key, value) in map.iter() {
+                            if key.to_string() == "icon" {
+                                new_map.insert(QString::from("icon"), qvar_str(icon));
+                            } else {
+                                new_map.insert(key.clone(), value.clone());
+                            }
+                        }
+                        replaced = QVariant::from(&new_map);
+                    }
+                }
+                updated.append(replaced);
+            }
+            self.as_mut().set_apps(updated);
         }
     }
 
@@ -630,7 +655,6 @@ impl ffi::Backend {
                 "apps" => {
                     rust.req_apps += 1;
                     rust.current_prefix = prefix_path.to_string_lossy().into_owned();
-                    rust.icons_requested.clear();
                     jobs::send(Job::Apps { req: rust.req_apps, prefix: prefix_path });
                 }
                 "dirs" => {
@@ -647,6 +671,11 @@ impl ffi::Backend {
                 }
                 _ => {}
             }
+        }
+        // dirs 请求一发出就清掉旧前缀的数据：扫描要几秒，弹层短暂空着也
+        // 好过让人点到别的目录的条目
+        if page == "dirs" {
+            self.as_mut().set_dirs(QVariantList::default());
         }
         self.as_mut().set_netns(netns);
     }
@@ -684,7 +713,6 @@ impl ffi::Backend {
     fn refresh_apps_now(mut self: Pin<&mut Self>, prefix: &str) {
         let mut rust = self.as_mut().rust_mut();
         rust.req_apps += 1;
-        rust.icons_requested.clear();
         let path = if prefix.is_empty() {
             expand_path(&rust.current_prefix.clone())
         } else {
@@ -736,6 +764,12 @@ impl ffi::Backend {
         };
 
         let zh = crate::core::loc::zh();
+        {
+            let mut rust = self.as_mut().rust_mut();
+            if !rust.pending_launches.insert(label.clone()) {
+                return;
+            }
+        }
         self.as_mut().set_status(QString::from(if zh {
             format!("正在启动 {label}…")
         } else {
@@ -765,31 +799,47 @@ impl ffi::Backend {
 
     pub fn close_app(mut self: Pin<&mut Self>, app_id: &QString, app_path: &QString, prefix: &QString) {
         let app_id_str = app_id.to_string();
+        let app_path_str = app_path.to_string();
         let prefix_path = expand_path(&prefix.to_string());
-        let everything = procs::scan_processes(&prefix_path);
-        let hosts = procs::session_host_pids(&everything);
-        // 安装目录：exe 所在目录；服务拉起的进程靠它识别
-        let install_dir = expand_path(&app_path.to_string())
-            .parent()
-            .map(|p| p.to_string_lossy().into_owned())
-            .unwrap_or_default();
-        let targets = procs::app_close_targets(&everything, &app_id_str, &install_dir, &hosts);
-        let count = targets.len();
-        for proc in &targets {
-            let _ = procs::kill_pid(proc.pid, false);
-        }
         let zh = crate::core::loc::zh();
-        self.as_mut().set_status(QString::from(format!(
-            "{}: {count}",
-            if zh { "关闭" } else { "Close" }
-        )));
-        // 三秒后还在的强制结束
+        self.as_mut().set_status(QString::from(if zh {
+            "正在关闭…"
+        } else {
+            "Closing…"
+        }));
+        // /proc 全量扫描不轻，放后台线程做；结果经事件回主线程
+        let events = jobs::events().clone();
         std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_secs(3));
+            let everything = procs::scan_processes(&prefix_path);
+            let hosts = procs::session_host_pids(&everything);
+            // 安装目录：exe 所在目录；服务拉起的进程靠它识别
+            let install_dir = expand_path(&app_path_str)
+                .parent()
+                .map(|p| p.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            let targets = procs::app_close_targets(&everything, &app_id_str, &install_dir, &hosts);
+            let count = targets.len();
             for proc in &targets {
-                if let Ok(comm) = std::fs::read_to_string(format!("/proc/{}/comm", proc.pid)) {
-                    if comm.trim() == proc.name {
-                        let _ = procs::kill_pid(proc.pid, true);
+                let _ = procs::kill_pid(proc.pid, false);
+            }
+            let _ = events.send(Event::Status(format!(
+                "{}: {count}",
+                if zh { "关闭" } else { "Close" }
+            )));
+            // 三秒后还在的强制结束。pid 可能在窗口期被复用：先核对启动
+            // 时刻，变了就放过——用户刚重启同一个游戏时不至于被误杀
+            let kill_list: Vec<(i32, String, Option<u64>)> = targets
+                .iter()
+                .map(|proc| (proc.pid, proc.name.clone(), procs::process_start_ticks(proc.pid)))
+                .collect();
+            std::thread::sleep(std::time::Duration::from_secs(3));
+            for (pid, name, ticks) in &kill_list {
+                if procs::process_start_ticks(*pid) != *ticks {
+                    continue;
+                }
+                if let Ok(comm) = std::fs::read_to_string(format!("/proc/{pid}/comm")) {
+                    if comm.trim() == name.as_str() {
+                        let _ = procs::kill_pid(*pid, true);
                     }
                 }
             }
@@ -807,31 +857,46 @@ impl ffi::Backend {
 
     pub fn kill_all_processes(mut self: Pin<&mut Self>, prefix: &QString) {
         let prefix_path = expand_path(&prefix.to_string());
-        let all = procs::scan_processes(&prefix_path);
-        let count = all.len();
-        // 先 SIGTERM：UU 这类带托盘的应用需要优雅退出来注销托盘图标，
-        // 直接 SIGKILL 会在桌面上留下点不掉的幽灵图标
-        for proc in &all {
-            let _ = procs::kill_pid(proc.pid, false);
-        }
         let zh = crate::core::loc::zh();
-        self.as_mut().set_status(QString::from(format!(
-            "{}: {count}",
-            if zh { "正在关闭" } else { "Closing" }
-        )));
-        // 三秒后还在的全部强制结束，然后刷新界面
+        self.as_mut().set_status(QString::from(if zh {
+            "正在关闭…"
+        } else {
+            "Closing…"
+        }));
+        let events = jobs::events().clone();
         std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_secs(3));
+            let all = procs::scan_processes(&prefix_path);
+            let count = all.len();
+            // 先 SIGTERM：UU 这类带托盘的应用需要优雅退出来注销托盘图标，
+            // 直接 SIGKILL 会在桌面上留下点不掉的幽灵图标
             for proc in &all {
-                if let Ok(comm) = std::fs::read_to_string(format!("/proc/{}/comm", proc.pid)) {
-                    if comm.trim() == proc.name {
-                        let _ = procs::kill_pid(proc.pid, true);
+                let _ = procs::kill_pid(proc.pid, false);
+            }
+            let _ = events.send(Event::Status(format!(
+                "{}: {count}",
+                if zh { "正在关闭" } else { "Closing" }
+            )));
+            // 三秒后还在的全部强制结束；同样核对启动时刻防 pid 复用误杀
+            let kill_list: Vec<(i32, String, Option<u64>)> = all
+                .iter()
+                .map(|proc| (proc.pid, proc.name.clone(), procs::process_start_ticks(proc.pid)))
+                .collect();
+            std::thread::sleep(std::time::Duration::from_secs(3));
+            for (pid, name, ticks) in &kill_list {
+                if procs::process_start_ticks(*pid) != *ticks {
+                    continue;
+                }
+                if let Ok(comm) = std::fs::read_to_string(format!("/proc/{pid}/comm")) {
+                    if comm.trim() == name.as_str() {
+                        let _ = procs::kill_pid(*pid, true);
                     }
                 }
             }
-            let _ = jobs::events().send(Event::Refresh);
+            let _ = jobs::events().send(Event::RefreshPage {
+                page: "procs".to_string(),
+                prefix: prefix_path.to_string_lossy().into_owned(),
+            });
         });
-        self.as_mut().refresh_page(&QString::from("procs"), prefix);
     }
 
     pub fn launch_linux(mut self: Pin<&mut Self>, prefix: &QString, command: &QString) {
@@ -873,8 +938,9 @@ impl ffi::Backend {
 
     pub fn log_text(self: Pin<&mut Self>, app_id: &QString) -> QString {
         let id = app_id.to_string();
+        // 日志可能上 MB，封顶 2MB 足够排查问题，也保住界面
         let text = crate::core::paths::latest_log_for_app(&id)
-            .and_then(|path| std::fs::read_to_string(path).ok())
+            .and_then(|path| crate::core::paths::tail_file(&path, 2 << 20))
             .unwrap_or_default();
         QString::from(text)
     }
@@ -887,8 +953,9 @@ impl ffi::Backend {
     pub fn log_tail(self: Pin<&mut Self>, app_id: &QString, lines: i32) -> QString {
         let id = app_id.to_string();
         let limit = lines.clamp(1, 200) as usize;
+        // 详情栏只要尾部几行：只从文件尾读 128KB，不整读
         let text = crate::core::paths::latest_log_for_app(&id)
-            .and_then(|path| std::fs::read_to_string(path).ok())
+            .and_then(|path| crate::core::paths::tail_file(&path, 128 << 10))
             .unwrap_or_default();
         if text.is_empty() {
             return QString::from("");
@@ -903,9 +970,15 @@ impl ffi::Backend {
         QString::from(tail)
     }
 
-    pub fn show_dir_exes(self: Pin<&mut Self>, prefix: &QString, dir_path: &QString) {
+    pub fn show_dir_exes(mut self: Pin<&mut Self>, prefix: &QString, dir_path: &QString) {
         // 扫描交给工作线程，结果到了再开弹层（大目录不至于卡界面）
+        let req = {
+            let mut rust = self.as_mut().rust_mut();
+            rust.req_exes += 1;
+            rust.req_exes
+        };
         jobs::send(Job::Exes {
+            req,
             prefix: expand_path(&prefix.to_string()),
             dir: expand_path(&dir_path.to_string()),
         });
@@ -1054,8 +1127,18 @@ impl ffi::Backend {
             config.name = map_get_str(entry, "displayName");
         }
         let exe = config.exe.clone();
-        let path = config.write();
-        let message = if crate::core::loc::zh() {
+        let zh = crate::core::loc::zh();
+        let path = match config.write() {
+            Ok(path) => path,
+            Err(err) => {
+                self.as_mut().set_status(QString::from(format!(
+                    "{}: {err}",
+                    if zh { "配置保存失败" } else { "Failed to save config" }
+                )));
+                return;
+            }
+        };
+        let message = if zh {
             format!("配置: {exe} → {}", path.to_string_lossy())
         } else {
             format!("Config: {exe} → {}", path.to_string_lossy())
@@ -1145,13 +1228,19 @@ impl ffi::Backend {
         let renamed = crate::core::export::rename_icon_cache_files(&old_name, &name);
         let mut entry = crate::core::export::app_cache_entry(&prefix_path, &app);
         entry.name = name.clone();
-        entry.write();
+        let zh = crate::core::loc::zh();
+        if let Err(err) = entry.write() {
+            self.as_mut().set_status(QString::from(format!(
+                "{}: {err}",
+                if zh { "重命名保存失败" } else { "Failed to save rename" }
+            )));
+            return;
+        }
         let desktop = crate::core::export::exported_desktop_path(&prefix_path, &app, None);
         if desktop.is_file() {
             crate::core::export::rewrite_desktop_name(&desktop, &name);
             crate::core::export::rewrite_desktop_icon(&desktop, &renamed);
         }
-        let zh = crate::core::loc::zh();
         self.as_mut().set_status(QString::from(format!(
             "{}: {name}",
             if zh { "重命名" } else { "Rename" }
@@ -1163,6 +1252,17 @@ impl ffi::Backend {
     pub fn delete_install_dir(mut self: Pin<&mut Self>, path: &QString) {
         let path = expand_path(&path.to_string());
         let zh = crate::core::loc::zh();
+        // 列表构建时算过一次 can_delete，到这里可能已经时过境迁：删之前按
+        // 当前前缀复核一遍，别让陈旧列表删掉不该删的目录
+        let prefix_path = expand_path(&self.as_mut().rust().current_prefix.clone());
+        if !scan::can_delete_install_dir(&prefix_path, &path) {
+            self.as_mut().set_status(QString::from(if zh {
+                "出于安全原因，不能删除该目录。"
+            } else {
+                "This directory cannot be deleted for safety reasons."
+            }));
+            return;
+        }
         match std::fs::remove_dir_all(&path) {
             Ok(()) => {
                 self.as_mut().set_status(QString::from(format!(
@@ -1182,47 +1282,57 @@ impl ffi::Backend {
         self.as_mut().refresh_apps_now(&prefix);
     }
 
-    pub fn delete_prefix(mut self: Pin<&mut Self>, path: &QString) {
+    pub fn delete_prefix(self: Pin<&mut Self>, path: &QString) {
         let path = expand_path(&path.to_string());
         let zh = crate::core::loc::zh();
-        if !procs::scan_processes(&path).is_empty() {
-            self.as_mut().set_status(QString::from(if zh {
-                "此前置环境仍有运行中的进程，请先关闭。"
-            } else {
-                "This prefix still has running processes."
-            }));
-            return;
-        }
-        if !scan::can_delete_prefix(&path) {
-            self.as_mut().set_status(QString::from(if zh {
-                "出于安全原因，不能删除此前置环境。"
-            } else {
-                "This prefix cannot be deleted for safety reasons."
-            }));
-            return;
-        }
-        match std::fs::remove_dir_all(&path) {
-            Ok(()) => {
-                self.as_mut().set_status(QString::from(format!(
+        // 进程扫描是 /proc 全量遍历，放后台做；结论经事件回主线程
+        let events = jobs::events().clone();
+        std::thread::spawn(move || {
+            if !procs::scan_processes(&path).is_empty() {
+                let _ = events.send(Event::Status(if zh {
+                    "此前置环境仍有运行中的进程，请先关闭。".to_string()
+                } else {
+                    "This prefix still has running processes.".to_string()
+                }));
+                return;
+            }
+            if !scan::can_delete_prefix(&path) {
+                let _ = events.send(Event::Status(if zh {
+                    "出于安全原因，不能删除此前置环境。".to_string()
+                } else {
+                    "This prefix cannot be deleted for safety reasons.".to_string()
+                }));
+                return;
+            }
+            let message = match std::fs::remove_dir_all(&path) {
+                Ok(()) => format!(
                     "{}: {}",
                     if zh { "已删除" } else { "Removed" },
                     path.to_string_lossy()
-                )));
-            }
-            Err(err) => {
-                self.as_mut().set_status(QString::from(format!(
+                ),
+                Err(err) => format!(
                     "{}: {err}",
                     if zh { "错误" } else { "Error" }
-                )));
-            }
-        }
-        self.as_mut().reload_prefixes();
+                ),
+            };
+            let _ = events.send(Event::Status(message));
+            let _ = events.send(Event::ReloadPrefixes);
+        });
     }
 
     // ── 运行器更新 ──────────────────────────────────────────
     pub fn check_updates(mut self: Pin<&mut Self>) {
-        if self.as_mut().rust_mut().update_running {
-            return;
+        let now = now_ms();
+        {
+            let mut rust = self.as_mut().rust_mut();
+            if rust.update_running {
+                return;
+            }
+            // 反复进页面会排一堆网络检查：5 秒内不重复发
+            if now.saturating_sub(rust.last_check_ms) < 5000 {
+                return;
+            }
+            rust.last_check_ms = now;
         }
         jobs::send(Job::UpdateCheck);
     }

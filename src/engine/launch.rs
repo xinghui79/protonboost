@@ -349,7 +349,7 @@ pub fn launch(request: &Request, zh: bool) -> Result<Report, String> {
         .stderr(Stdio::from(log));
     use std::os::unix::process::CommandExt;
     command.process_group(0);
-    let child = command.spawn().map_err(|err| err.to_string())?;
+    let mut child = command.spawn().map_err(|err| err.to_string())?;
 
     // 等 wineserver 起来，再确认程序确实进了会话
     let deadline = Instant::now() + Duration::from_secs(120);
@@ -359,7 +359,11 @@ pub fn launch(request: &Request, zh: bool) -> Result<Report, String> {
         }
         std::thread::sleep(Duration::from_millis(200));
     }
-    let _ = child.id();
+    // 不等游戏退出，但也不能把子进程变僵尸（GUI 常驻，没人替我们收尸）：
+    // 交给独立线程 wait
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
     Ok(Report { notes: session.notes })
 }
 
@@ -398,7 +402,11 @@ pub fn run_command(prefix: &Path, argv: &[String]) -> Result<(), String> {
         .stderr(Stdio::from(log));
     use std::os::unix::process::CommandExt;
     command.process_group(0);
-    command.spawn().map(|_| ()).map_err(|err| err.to_string())
+    let mut child = command.spawn().map_err(|err| err.to_string())?;
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
+    Ok(())
 }
 
 /// 从 Steam 传来的 `%command%` 里找出真正的游戏程序。

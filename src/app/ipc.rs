@@ -1,11 +1,24 @@
 // 单实例：第二个实例通过 unix 套接字通知第一个实例显示窗口
 use std::io::{Read as _, Write as _};
 use std::os::unix::net::{UnixListener, UnixStream};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Sender;
 
+/// 本进程是否真的 bind 过套接字（configure 等模式没有）：退出时只清自己的
+static SOCKET_OWNED: AtomicBool = AtomicBool::new(false);
+
 pub fn socket_path() -> std::path::PathBuf {
-    let runtime = std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| "/tmp".into());
+    // XDG_RUNTIME_DIR 缺失时不能直接用 /tmp 的固定名：全局可写目录里其他
+    // 用户能抢占套接字或伪造 ack，按 uid 隔开
+    let runtime = std::env::var("XDG_RUNTIME_DIR")
+        .ok()
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| format!("/tmp/protonboost-{}", user_id()));
     std::path::Path::new(&runtime).join("protonboost.sock")
+}
+
+fn user_id() -> u32 {
+    nix::unistd::Uid::current().as_raw()
 }
 
 /// 尝试通知已运行的实例；true = 已通知，本进程应退出
@@ -45,22 +58,33 @@ pub fn listen(tx: Sender<()>) {
     let Ok(listener) = UnixListener::bind(&path) else {
         return;
     };
+    SOCKET_OWNED.store(true, Ordering::SeqCst);
     std::thread::spawn(move || {
         for stream in listener.incoming() {
             let mut stream = match stream {
                 Ok(stream) => stream,
                 Err(_) => continue,
             };
+            // 对方连上后不发数据会让这条监听线程永远停在这里，单实例就此
+            // 卡死：读最多等 500ms，没话说的连接直接丢弃
+            let _ = stream.set_read_timeout(Some(std::time::Duration::from_millis(500)));
             let mut buf = [0u8; 16];
-            let _ = std::io::Read::read(&mut stream, &mut buf);
-            // 回一个确认：发起方据此判断对方确实活着
-            let _ = stream.write_all(b"ok\n");
-            let _ = tx.send(());
+            match stream.read(&mut buf) {
+                Ok(n) if n > 0 => {
+                    // 回一个确认：发起方据此判断对方确实活着
+                    let _ = stream.write_all(b"ok\n");
+                    let _ = tx.send(());
+                }
+                _ => {}
+            }
         }
     });
 }
 
-/// 清理退出时的套接字
+/// 清理退出时的套接字：只清自己 bind 过的，别删到别人（configure 实例、
+/// 迟一步 bind 的管理器）名下的
 pub fn cleanup() {
-    let _ = std::fs::remove_file(&socket_path());
+    if SOCKET_OWNED.load(Ordering::SeqCst) {
+        let _ = std::fs::remove_file(socket_path());
+    }
 }

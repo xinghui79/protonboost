@@ -17,8 +17,10 @@ fn read_utf16_cstring(data: &[u8], offset: usize) -> String {
         end += 2;
     }
     let slice: Vec<u16> = data[offset..end.min(data.len())]
-        .chunks_exact(2)
-        .map(|c| u16::from_le_bytes([c[0], c[1]]))
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|c| u16::from_le_bytes(*c))
         .collect();
     String::from_utf16_lossy(&slice)
 }
@@ -33,8 +35,10 @@ fn read_lnk_string(data: &[u8], offset: &mut usize, unicode: bool) -> String {
         let size = length * 2;
         let end = (*offset + size).min(data.len());
         let slice: Vec<u16> = data[*offset..end]
-            .chunks_exact(2)
-            .map(|c| u16::from_le_bytes([c[0], c[1]]))
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|c| u16::from_le_bytes(*c))
             .collect();
         *offset += size;
         String::from_utf16_lossy(&slice).trim_end_matches('\0').to_string()
@@ -76,8 +80,10 @@ fn lnk_item_long_name(item: &[u8]) -> String {
         begin -= 2;
     }
     let slice: Vec<u16> = item[begin..end]
-        .chunks_exact(2)
-        .map(|c| u16::from_le_bytes([c[0], c[1]]))
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|c| u16::from_le_bytes(*c))
         .collect();
     String::from_utf16_lossy(&slice)
 }

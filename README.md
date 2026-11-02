@@ -43,15 +43,15 @@ Rust + Qt 6（cxx-qt + QML），没有脚本、没有 Python，装完就是一�
 **Arch**（从 Release 直装）：
 
 ```bash
-curl -LO https://github.com/xinghui79/protonboost/releases/latest/download/protonboost-0.1.0-1-x86_64.pkg.tar.zst \
-  && sudo pacman -U protonboost-0.1.0-1-x86_64.pkg.tar.zst
+curl -LO https://github.com/xinghui79/protonboost/releases/latest/download/protonboost-0.1.1-1-x86_64.pkg.tar.zst \
+  && sudo pacman -U protonboost-0.1.1-1-x86_64.pkg.tar.zst
 ```
 
 **Debian / Ubuntu**：
 
 ```bash
-curl -LO https://github.com/xinghui79/protonboost/releases/latest/download/protonboost_0.1.0_amd64.deb \
-  && sudo apt install ./protonboost_0.1.0_amd64.deb
+curl -LO https://github.com/xinghui79/protonboost/releases/latest/download/protonboost_0.1.1_amd64.deb \
+  && sudo apt install ./protonboost_0.1.1_amd64.deb
 ```
 
 **其它发行版**：下载 [便携包](https://github.com/xinghui79/protonboost/releases/latest)，

@@ -1,5 +1,5 @@
 // XDG 路径与项目目录
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub fn home() -> PathBuf {
     PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| "/".into()))
@@ -80,13 +80,34 @@ pub fn latest_log_for_app(app_id: &str) -> Option<PathBuf> {
             Some((time, path))
         })
         .collect();
-    logs.sort_by(|a, b| b.0.cmp(&a.0));
+    logs.sort_by_key(|log| std::cmp::Reverse(log.0));
     logs.into_iter().next().map(|(_, path)| path)
 }
 
+/// 读文件尾部：最多 max_bytes 字节，从头一个完整行开始。
+/// Proton/Wine 的日志上 MB 很常见，界面详情栏整读会把主线程卡住
+pub fn tail_file(path: &Path, max_bytes: u64) -> Option<String> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut file = std::fs::File::open(path).ok()?;
+    let len = file.metadata().ok()?.len();
+    let start = len.saturating_sub(max_bytes);
+    file.seek(SeekFrom::Start(start)).ok()?;
+    let mut bytes = Vec::with_capacity((len - start).min(8 << 20) as usize);
+    file.read_to_end(&mut bytes).ok()?;
+    let mut text = String::from_utf8_lossy(&bytes).into_owned();
+    if start > 0 {
+        // 掐掉不完整的头一行
+        if let Some(pos) = text.find('\n') {
+            text.drain(..=pos);
+        } else {
+            text.clear();
+        }
+    }
+    Some(text)
+}
+
 /// 展开路径并规整化（不要求存在）
-pub fn expand_path(value: &str) -> PathBuf {
-    let value = value.trim();
+pub fn expand_path(value: &str) -> PathBuf {    let value = value.trim();
     let expanded = if let Some(rest) = value.strip_prefix("~/") {
         home().join(rest)
     } else if value == "~" {

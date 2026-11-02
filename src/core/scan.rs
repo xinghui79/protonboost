@@ -106,7 +106,8 @@ pub fn mark_app_started(prefix: &Path, path: &Path) {
     let dir = app_log_dir(&app_identity(prefix, path));
     let _ = std::fs::create_dir_all(&dir);
     let now = std::time::SystemTime::now();
-    let _ = std::fs::OpenOptions::new().write(true).open(&dir).and_then(|f| {
+    // 目录不能用 write 打开（Linux 上 EISDIR），read 打开就够 set_modified 用
+    let _ = std::fs::OpenOptions::new().read(true).open(&dir).and_then(|f| {
         f.set_modified(now)
     });
 }
@@ -333,7 +334,8 @@ fn collect_lnk_files(root: &Path, out: &mut Vec<PathBuf>) {
     let mut entries: Vec<PathBuf> = read.flatten().map(|entry| entry.path()).collect();
     entries.sort_by_key(|path| path.to_string_lossy().to_lowercase());
     for path in entries {
-        if path.is_dir() {
+        // 不跟进符号链接：前缀里出现链接环时会把这里递归到栈溢出
+        if path.is_dir() && !path.is_symlink() {
             collect_lnk_files(&path, out);
         } else if path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("lnk")) {
             out.push(path);
@@ -487,6 +489,7 @@ pub fn scan_apps(prefix: &Path) -> Vec<AppEntry> {
             steam_appid: entry.steam_appid.clone(),
             kind: "saved-config".into(),
             last_used: app_last_used(&prefix, &exe_path),
+            missing: !exe_path.exists(),
             ..Default::default()
         });
     }
@@ -685,7 +688,8 @@ fn collect_exe_files(directory: &Path, limit: usize, out: &mut Vec<PathBuf>) {
     let mut entries: Vec<PathBuf> = read.flatten().map(|entry| entry.path()).collect();
     entries.sort_by_key(|path| path.to_string_lossy().to_lowercase());
     for path in entries {
-        if path.is_dir() {
+        // 不跟进符号链接：链接环（不限 exe 数量）会把递归拖到栈溢出
+        if path.is_dir() && !path.is_symlink() {
             collect_exe_files(&path, limit, out);
         } else if path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("exe")) {
             out.push(path);
@@ -850,6 +854,7 @@ pub fn app_cache_files(prefix: &Path, app: &AppEntry) -> Vec<PathBuf> {
         .iter()
         .map(|path| normalized(&expand_path(&path.to_string_lossy())).to_string_lossy().into_owned())
         .collect();
+    let app_prefix = expand_path(&prefix.to_string_lossy());
     if let Ok(read) = std::fs::read_dir(crate::core::paths::association_dir()) {
         for entry in read.flatten() {
             let conf = entry.path();
@@ -860,10 +865,12 @@ pub fn app_cache_files(prefix: &Path, app: &AppEntry) -> Vec<PathBuf> {
             let Some(exe) = data.get("exe") else {
                 continue;
             };
+            // 只收当前前缀名下的：别的前缀对同一 exe 的配置归别的前缀管，
+            // 跨前缀连删会把那边还在用的配置删掉
             if data
                 .get("prefix")
-                .map(|p| expand_path(p) == expand_path(&prefix.to_string_lossy()))
-                .unwrap_or_else(|| crate::core::paths::default_prefix() == expand_path(&prefix.to_string_lossy()))
+                .map(|p| expand_path(p) != app_prefix)
+                .unwrap_or_else(|| crate::core::paths::default_prefix() != app_prefix)
             {
                 continue;
             }

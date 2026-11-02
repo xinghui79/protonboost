@@ -10,7 +10,6 @@
 
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::time::Duration;
 
 /// Steam 客户端的端口
 const STEAM_PORT: u16 = 57343;
@@ -73,8 +72,7 @@ fn copy_both(client: TcpStream, upstream: TcpStream) {
     let mut input = upstream_reader.try_clone().ok();
     std::thread::spawn(move || {
         let mut buffer = [0u8; 65536];
-        loop {
-            let Some(source) = input.as_mut() else { break };
+        while let Some(source) = input.as_mut() {
             match source.read(&mut buffer) {
                 Ok(0) | Err(_) => break,
                 Ok(count) => {
@@ -91,8 +89,7 @@ fn copy_both(client: TcpStream, upstream: TcpStream) {
     let mut out = upstream_writer;
     let mut input = client_reader.try_clone().ok();
     let mut buffer = [0u8; 65536];
-    loop {
-        let Some(source) = input.as_mut() else { break };
+    while let Some(source) = input.as_mut() {
         match source.read(&mut buffer) {
             Ok(0) | Err(_) => break,
             Ok(count) => {
@@ -120,43 +117,42 @@ impl SteamForward {
     }
 
     /// 按宿主上 Steam 的状态启停转发
+    ///
+    /// keeper 每秒调一次。accept 不开常驻线程：监听 socket 由 self 持有、
+    /// 非阻塞地收下这一秒内到达的连接。否则宿主 Steam 重启后，accept 线程
+    /// 里的克隆 fd 会让监听一直活着，重新 bind 端口永远 EADDRINUSE，
+    /// 转发就静默失效了。
     pub fn update(&mut self) {
+        if !host_steam_listening() {
+            // 连监听一起关掉；宿主 Steam 回来时下一次 update 会重新 bind
+            self.listener = None;
+            return;
+        }
         let Some(gateway) = self.gateway else {
             return;
         };
-        let wanted = host_steam_listening();
-        if wanted && self.listener.is_none() {
+        if self.listener.is_none() {
             let listener = match TcpListener::bind(("127.0.0.1", STEAM_PORT)) {
                 Ok(listener) => listener,
                 // 命名空间里已经有 Steam 占了这个端口（自己启动的那个）
                 Err(_) => return,
             };
             listener.set_nonblocking(true).ok();
-            // 克隆一份给转发线程，listener 本身留在 self 里
-            let accept_listener = match listener.try_clone() {
-                Ok(clone) => clone,
-                Err(_) => return,
-            };
             self.listener = Some(listener);
-            let gateway = gateway.to_string();
-            std::thread::spawn(move || {
-                loop {
-                    std::thread::sleep(Duration::from_millis(500));
-                    let Ok((client, _)) = accept_listener.accept() else {
-                        continue;
-                    };
-                    let gateway = gateway.clone();
-                    std::thread::spawn(move || {
-                        let Ok(upstream) = TcpStream::connect((gateway.as_str(), STEAM_PORT)) else {
-                            return;
-                        };
-                        copy_both(client, upstream);
-                    });
-                }
-            });
             println!("session: forwarding Steam port {STEAM_PORT} to the host");
-        } else if !wanted {
-            self.listener = None;
+        }
+        let Some(listener) = self.listener.as_ref() else {
+            return;
+        };
+        let gateway = gateway.to_string();
+        while let Ok((client, _)) = listener.accept() {
+            let gateway = gateway.clone();
+            std::thread::spawn(move || {
+                let Ok(upstream) = TcpStream::connect((gateway.as_str(), STEAM_PORT)) else {
+                    return;
+                };
+                copy_both(client, upstream);
+            });
         }
     }
 

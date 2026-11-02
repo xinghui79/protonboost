@@ -71,6 +71,9 @@ fn serve(client: UnixStream, bus: &Path, real_uid: u32) {
         Err(_) => return,
     };
 
+    // 客户端方向结束后把上游 socket 一并 shutdown：总线才能感知到客户端
+    // 已离开——不然 bus→client 的泵还握着连接，两边互相等，直到进程退出
+    let upstream_shutdown = upstream.try_clone().ok();
     // 客户端 → 总线：先改写 AUTH 行，进入 BEGIN 后转纯透传（要过 fd）
     let auth = std::thread::spawn(move || {
         auth_pump(client_reader, upstream_writer, real_uid);
@@ -84,6 +87,11 @@ fn serve(client: UnixStream, bus: &Path, real_uid: u32) {
         pump(from, to);
     });
     let _ = auth.join();
+    if let Some(handle) = upstream_shutdown {
+        unsafe {
+            let _ = nix::libc::shutdown(handle.as_raw_fd(), nix::libc::SHUT_RDWR);
+        }
+    }
 }
 
 /// SASL 阶段的客户端泵：逐行改写 `AUTH EXTERNAL <uid>`，看到 BEGIN 就地切换
@@ -185,7 +193,14 @@ fn pump(from: RawFd, to: RawFd) {
     let mut buf = [0u8; 65536];
     loop {
         match recv_with_fds(from, &mut buf) {
-            Some((0, _)) | None => return,
+            Some((0, fds)) => {
+                // 空消息也可能带 fd，同样要收掉，别漏
+                for fd in fds {
+                    unsafe { nix::libc::close(fd) };
+                }
+                return;
+            }
+            None => return,
             Some((count, fds)) => {
                 let data = &buf[..count];
                 let ok = if fds.is_empty() {
@@ -275,7 +290,7 @@ impl AuthRewriter {
         // BEGIN 与剩余字节可能同批到达（fd 协商前的数据一般没有），
         // 但为防丢，done 之后把没凑成行的尾巴直接放行
         if self.done && !self.pending.is_empty() {
-            out.extend(self.pending.drain(..));
+            out.append(&mut self.pending);
         }
         out
     }

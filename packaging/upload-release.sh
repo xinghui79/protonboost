@@ -39,14 +39,20 @@ RESP="$(mktemp)"
 trap 'rm -f "$CLEAN_CFG" "$BODY" "$RESP"' EXIT
 export GIT_CONFIG_GLOBAL="$CLEAN_CFG"   # 绕过 gh-proxy insteadOf 等全局重写
 
-git remote add origin "https://github.com/$REPO.git" 2>/dev/null || true
-git remote set-url origin "https://github.com/$REPO.git"
-
+# 不动用户的 origin（可能是 fork / SSH 地址），推送直接用带 token 的 URL。
+# push 失败时 git 的错误输出可能带完整 URL（含 token），先截下来做脱敏再打印。
 PUSH_URL="https://x-access-token:${GITHUB_TOKEN}@github.com/${REPO}.git"
 BRANCH="$(git branch --show-current)"
 
+push_quietly() {
+    local output status
+    output="$(git push "$PUSH_URL" "$@" 2>&1)" && status=0 || status=$?
+    printf '%s\n' "${output//$GITHUB_TOKEN/***TOKEN***}"
+    return "$status"
+}
+
 echo "→ 推送分支 $BRANCH → main"
-git push "$PUSH_URL" "$BRANCH:main"
+push_quietly "$BRANCH:main"
 
 if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
     echo "→ 标签 $TAG 已存在"
@@ -54,7 +60,7 @@ else
     git tag "$TAG"
     echo "→ 打标签 $TAG"
 fi
-git push "$PUSH_URL" "refs/tags/$TAG"
+push_quietly "refs/tags/$TAG"
 
 echo "→ 创建 Release $TAG"
 python3 - "$TAG" > "$BODY" <<'PYEOF'

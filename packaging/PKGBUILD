@@ -7,7 +7,7 @@
 #   PROTONBOOST_REPO="file:///path/to/protonboost" makepkg -f
 
 pkgname=protonboost
-pkgver=0.1.0
+pkgver=0.1.1
 pkgrel=1
 pkgdesc="在 Linux 上用 Proton / Wine 运行 Windows 程序（Rust + Qt 6）"
 arch=('x86_64' 'aarch64')
@@ -24,6 +24,7 @@ depends=(
 makedepends=(
     'cargo'
     'cmake'
+    'git'
     'qt6-base'
     'qt6-declarative'
 )
@@ -34,7 +35,8 @@ optdepends=(
 )
 options=('!lto')
 
-_repo="${PROTONBOOST_REPO:-git+https://github.com/xinghui79/protonboost}"
+# 注意不要带 git+ 前缀：source= 里已经写了一层，makepkg 只剥一层
+_repo="${PROTONBOOST_REPO:-https://github.com/xinghui79/protonboost}"
 source=("$pkgname::git+$_repo")
 sha256sums=('SKIP')
 
@@ -56,4 +58,5 @@ package() {
 
     install -Dm644 assets/icons/protonboost.png "$pkgdir/usr/share/icons/hicolor/512x512/apps/protonboost.png"
     install -Dm644 assets/icons/protonboost.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/protonboost.svg"
+    install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }

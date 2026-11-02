@@ -261,14 +261,18 @@ pub fn install(candidates: &[Candidate]) -> Result<usize, String> {
             return Err(format!("下载失败：{}", release.archive_name));
         }
 
-        if let Some(expected) = fetch_any(&release.checksum_url)
+        // 校验文件拿不到就不能装：归档可能来自第三方镜像，必须有完整性验证
+        let expected = fetch_any(&release.checksum_url)
             .and_then(|body| String::from_utf8(body).ok())
             .and_then(|text| text.split_whitespace().next().map(|value| value.to_string()))
-        {
-            if sha512_file(&archive).as_deref() != Some(expected.as_str()) {
-                let _ = std::fs::remove_file(&archive);
-                return Err(format!("校验失败：{}", release.archive_name));
-            }
+            .filter(|value| !value.is_empty());
+        let Some(expected) = expected else {
+            let _ = std::fs::remove_file(&archive);
+            return Err(format!("拉不到校验文件，已放弃安装：{}", release.archive_name));
+        };
+        if sha512_file(&archive).as_deref() != Some(expected.as_str()) {
+            let _ = std::fs::remove_file(&archive);
+            return Err(format!("校验失败：{}", release.archive_name));
         }
 
         let staging = downloads.join(format!("extract-{}", std::process::id()));
@@ -297,13 +301,48 @@ pub fn install(candidates: &[Candidate]) -> Result<usize, String> {
         if let Some(parent) = candidate.target.parent() {
             std::fs::create_dir_all(parent).map_err(|err| err.to_string())?;
         }
-        let _ = std::fs::remove_dir_all(&candidate.target);
-        std::fs::rename(&root, &candidate.target).map_err(|err| err.to_string())?;
+        // 先把旧目录挪开再装新的：装失败（比如 downloads 在 ~/.cache、目标在
+        // ~/.local/share，跨文件系统时 rename 走不了）能原样退回，不会把用户
+        // 已装的运行器删了又装不上
+        let backup = candidate
+            .target
+            .with_file_name(format!("{}.old-{}", candidate.target.file_name().and_then(|n| n.to_str()).unwrap_or("runner"), std::process::id()));
+        let _ = std::fs::remove_dir_all(&backup);
+        let had_old = std::fs::rename(&candidate.target, &backup).is_ok();
+        if let Err(err) = move_dir(&root, &candidate.target) {
+            if had_old {
+                let _ = std::fs::rename(&backup, &candidate.target);
+            }
+            return Err(format!("安装失败：{err}"));
+        }
+        let _ = std::fs::remove_dir_all(&backup);
         let _ = std::fs::remove_dir_all(&staging);
         let _ = std::fs::remove_file(&archive);
         updated += 1;
     }
     Ok(updated)
+}
+
+/// 目录挪位置：先试 rename，跨文件系统时退回复制
+fn move_dir(source: &Path, target: &Path) -> Result<(), String> {
+    if std::fs::rename(source, target).is_ok() {
+        return Ok(());
+    }
+    copy_tree(source, target)
+}
+
+fn copy_tree(source: &Path, target: &Path) -> Result<(), String> {
+    std::fs::create_dir_all(target).map_err(|err| err.to_string())?;
+    for entry in std::fs::read_dir(source).map_err(|err| err.to_string())?.flatten() {
+        let from = entry.path();
+        let to = target.join(entry.file_name());
+        if from.is_dir() {
+            copy_tree(&from, &to)?;
+        } else {
+            std::fs::copy(&from, &to).map_err(|err| err.to_string())?;
+        }
+    }
+    Ok(())
 }
 
 /// 界面上的一行说明

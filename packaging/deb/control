@@ -5,10 +5,10 @@ Priority: optional
 Architecture: @ARCH@
 Installed-Size: @SIZE@
 Maintainer: ProtonBoost <protonboost@example.com>
-Depends: libqt6core6t64 | libqt6core6, libqt6gui6t64 | libqt6gui6, libqt6widgets6t64 | libqt6widgets6, libqt6qml6t64 | libqt6qml6, libqt6quick6t64 | libqt6quick6, libqt6svg6t64 | libqt6svg6, passt, util-linux, curl, tar
+Depends: libqt6core6t64 | libqt6core6, libqt6gui6t64 | libqt6gui6, libqt6widgets6t64 | libqt6widgets6, libqt6qml6t64 | libqt6qml6, libqt6quick6t64 | libqt6quick6, libqt6svg6t64 | libqt6svg6, qml6-module-qtquick, qml6-module-qtquick-controls, qml6-module-qtquick-layouts, qml6-module-qtquick-dialogs, qml6-module-qtquick-window, qml6-module-qtqml-workerscript, passt, util-linux, curl, tar
 Recommends: libnotify-bin, wine
 Suggests: icoextract, gamescope, mangohud
-Homepage: https://github.com/protonboost-linux/protonboost
+Homepage: https://github.com/xinghui79/protonboost
 Description: 在 Linux 上用 Proton / Wine 运行 Windows 程序（Rust + Qt 6）
  把 exe 拖给 ProtonBoost，它在默认前缀里建好环境就跑；图形管理器管前缀、
  程序、进程，还能把 Windows 加速器和游戏放进同一个网络命名空间。

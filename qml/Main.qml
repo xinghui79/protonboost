@@ -71,10 +71,20 @@ ApplicationWindow {
     property var editEntry: ({})
     property var pendingConfirm: null
     property string exesTitle: ""
+    // 用户关掉 exe 弹层后，迟到的扫描结果不再自己弹出来
+    property bool exesDismissed: false
     property string renameTarget: ""
     property string currentLogAppId: ""
     property string logTitle: ""
     property var searchValues: ["", "", ""]
+
+    // QUrl → 本地路径：toString() 保留百分号编码，含空格/中文的路径会坏
+    function urlToPath(url) {
+        var text = url.toString()
+        if (text.indexOf("file://") === 0) text = text.substring(7)
+        try { text = decodeURIComponent(text) } catch (e) {}
+        return text
+    }
 
     function commitSearch(text, page) {
         var copy = searchValues.slice()
@@ -139,7 +149,7 @@ ApplicationWindow {
                 } else if (names[i] === "exes") {
                     exesTitle = backend.exes_title
                     exesList.model = backend.exes_items
-                    exesPopup.open()
+                    if (!root.exesDismissed) exesPopup.open()
                 }
             }
         }
@@ -1050,7 +1060,6 @@ ApplicationWindow {
         spacing: 0
         reuseItems: true
         cacheBuffer: 960
-        width: parent ? parent.width : 0
         visible: count > 0
 
         Rectangle {
@@ -2182,6 +2191,7 @@ ApplicationWindow {
                             }
                         }
                         onClicked: {
+                            root.exesDismissed = false
                             backend.show_dir_exes(root.appsPrefix, modelData.path)
                             dirsPopup.close()
                         }
@@ -2221,6 +2231,8 @@ ApplicationWindow {
         width: 720
         height: 560
         padding: 20
+        // 关过一次就别让同批迟到的结果再弹出来；下次选择目录时会复位
+        onClosed: root.exesDismissed = true
         background: Rectangle { radius: 14; color: c.row; border.width: 1; border.color: c.line }
         contentItem: ColumnLayout {
             spacing: 12
@@ -2274,6 +2286,13 @@ ApplicationWindow {
                 }
                 ScrollBar.vertical: ScrollBar {}
             }
+            Text {
+                Layout.alignment: Qt.AlignHCenter
+                visible: exesList.count === 0
+                text: root.zh ? "这个目录里没有找到 exe" : "No executables found in this folder"
+                font.pixelSize: 12
+                color: c.faint
+            }
             RowLayout {
                 spacing: 8
                 Layout.alignment: Qt.AlignRight
@@ -2286,14 +2305,14 @@ ApplicationWindow {
     FileDialog {
         id: addExeDialog
         nameFilters: ["Windows 程序 (*.exe)"]
-        onAccepted: backend.config_from_exe(root.appsPrefix, selectedFile.toString().replace("file://", ""))
+        onAccepted: backend.config_from_exe(root.appsPrefix, root.urlToPath(selectedFile))
     }
 
     // 「添加应用 → 直接运行 exe」：装个安装包用，跑完不往列表里塞条目
     FileDialog {
         id: runExeDialog
         nameFilters: ["Windows 程序 (*.exe)"]
-        onAccepted: backend.run_path(selectedFile.toString().replace("file://", ""), root.appsPrefix, "")
+        onAccepted: backend.run_path(root.urlToPath(selectedFile), root.appsPrefix, "")
     }
 
     // ── 弹层：运行设置 ──────────────────────────────────────
@@ -2712,10 +2731,10 @@ ApplicationWindow {
     FileDialog {
         id: exeDialog
         nameFilters: ["Windows 程序 (*.exe)"]
-        onAccepted: cfg.exe = selectedFile.toString().replace("file://", "")
+        onAccepted: cfg.exe = root.urlToPath(selectedFile)
     }
     FolderDialog {
         id: prefixDialog
-        onAccepted: cfg.prefix = selectedFolder.toString().replace("file://", "")
+        onAccepted: cfg.prefix = root.urlToPath(selectedFolder)
     }
 }

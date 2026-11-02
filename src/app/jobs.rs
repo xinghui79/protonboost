@@ -3,7 +3,7 @@ use crate::core::conf::ConfigEntry;
 use crate::core::procs;
 use crate::core::scan::{self, AppEntry};
 use crate::engine::launch::Request;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Mutex, OnceLock};
@@ -61,7 +61,7 @@ pub enum Job {
     Dirs { req: u64, prefix: PathBuf },
     Procs { req: u64, prefix: PathBuf },
     LinuxApps { req: u64 },
-    Exes { prefix: PathBuf, dir: PathBuf },
+    Exes { req: u64, prefix: PathBuf, dir: PathBuf },
     Launch { request: Request, label: String },
     LaunchCommand { prefix: PathBuf, argv: Vec<String>, label: String },
     UpdateCheck,
@@ -74,7 +74,7 @@ pub enum ResultMsg {
     Dirs { req: u64, items: Vec<DirRow> },
     Procs { req: u64, items: Vec<ProcRow> },
     LinuxApps { req: u64, items: Vec<LinuxAppRow> },
-    Exes { title: String, items: Vec<ExeRow> },
+    Exes { req: u64, title: String, items: Vec<ExeRow> },
     Launch { label: String, result: Result<Vec<String>, String> },
     UpdateCheck { text: String },
     UpdateRun { installed: usize, error: Option<String> },
@@ -86,12 +86,35 @@ pub enum Event {
     ToggleWindow,
     Quit,
     Refresh,
+    /// 后台线程干完活了，给状态栏带句话（只有主线程能碰界面属性）
+    Status(String),
+    /// 前缀列表需要重算（删除前缀等异步操作完成后）
+    ReloadPrefixes,
+    /// 刷新指定页面（后台线程完成关闭/删除后）
+    RefreshPage { page: String, prefix: String },
 }
 
 static JOBS: OnceLock<Sender<Job>> = OnceLock::new();
 static RESULTS: OnceLock<Mutex<Receiver<ResultMsg>>> = OnceLock::new();
 static EVENTS: OnceLock<Sender<Event>> = OnceLock::new();
 static EVENT_RX: OnceLock<Mutex<Receiver<Event>>> = OnceLock::new();
+/// 图标提取失败的 app：本进程内不再重试（结果没有缓存，每次刷新都会
+/// 重新做一遍完整解析，纯浪费）
+static ICON_FAILED: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+
+fn icon_failed_set() -> &'static Mutex<HashSet<String>> {
+    ICON_FAILED.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+pub fn icon_failed(app_id: &str) -> bool {
+    icon_failed_set().lock().map(|set| set.contains(app_id)).unwrap_or(false)
+}
+
+fn mark_icon_failed(app_id: &str) {
+    if let Ok(mut set) = icon_failed_set().lock() {
+        set.insert(app_id.to_string());
+    }
+}
 
 /// 初始化通道与工作线程；在 main 里最先调用
 pub fn init() {
@@ -116,7 +139,15 @@ pub fn init() {
                 guard.recv()
             };
             match job {
-                Ok(job) => handle(job, &result_tx),
+                Ok(job) => match job {
+                    // 下载与启动一跑几分钟，不能占住 worker：否则另一个 worker
+                    // 再忙着扫描时，点启动只能排队干等
+                    Job::UpdateRun | Job::Launch { .. } | Job::LaunchCommand { .. } => {
+                        let tx = result_tx.clone();
+                        std::thread::spawn(move || handle(job, &tx));
+                    }
+                    job => handle(job, &result_tx),
+                },
                 Err(_) => return,
             }
         });
@@ -165,7 +196,7 @@ fn handle(job: Job, tx: &Sender<ResultMsg>) {
             let _ = tx.send(ResultMsg::Apps { req, items: items.clone(), apps: apps.clone() });
             // 图标后台补齐：没有现成 PNG 缓存的逐个提取
             for (app, row) in apps.iter().zip(items.iter()) {
-                if row.icon.is_empty() {
+                if row.icon.is_empty() && !icon_failed(&row.app_id) {
                     send(Job::Icon {
                         req,
                         app_id: row.app_id.clone(),
@@ -215,7 +246,7 @@ fn handle(job: Job, tx: &Sender<ResultMsg>) {
                 .collect();
             let _ = tx.send(ResultMsg::LinuxApps { req, items });
         }
-        Job::Exes { prefix, dir } => {
+        Job::Exes { req, prefix, dir } => {
             let exes = scan::scan_exes_in_dir(&dir, 300);
             let items: Vec<ExeRow> = exes
                 .into_iter()
@@ -226,6 +257,7 @@ fn handle(job: Job, tx: &Sender<ResultMsg>) {
                 })
                 .collect();
             let _ = tx.send(ResultMsg::Exes {
+                req,
                 title: scan::windows_display_path(&prefix, &dir),
                 items,
             });
@@ -235,26 +267,33 @@ fn handle(job: Job, tx: &Sender<ResultMsg>) {
             let _ = tx.send(ResultMsg::UpdateCheck { text });
         }
         Job::UpdateRun => {
-            let candidates = crate::engine::update::check();
-            if candidates.is_empty() {
-                let _ = tx.send(ResultMsg::UpdateRun {
-                    installed: 0,
-                    error: Some(if crate::core::loc::zh() {
-                        "没有可下载的运行器（检查网络，或已有最新版）".into()
+            // 更新按钮的可视状态要等本结果回来才复位：哪怕任务线程崩了也
+            // 必须发一条结果，否则按钮永远停在「下载中」
+            let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let candidates = crate::engine::update::check();
+                if candidates.is_empty() {
+                    Err(if crate::core::loc::zh() {
+                        "没有可下载的运行器（检查网络，或已有最新版）".to_string()
                     } else {
-                        "Nothing to download (check the network)".into()
-                    }),
-                });
-            } else {
-                match crate::engine::update::install(&candidates) {
-                    Ok(count) => {
-                        let _ = tx.send(ResultMsg::UpdateRun { installed: count, error: None });
-                    }
-                    Err(err) => {
-                        let _ = tx.send(ResultMsg::UpdateRun { installed: 0, error: Some(err) });
-                    }
+                        "Nothing to download (check the network)".to_string()
+                    })
+                } else {
+                    crate::engine::update::install(&candidates)
                 }
-            }
+            }));
+            let (installed, error) = match outcome {
+                Ok(Ok(count)) => (count, None),
+                Ok(Err(err)) => (0, Some(err)),
+                Err(_) => (
+                    0,
+                    Some(if crate::core::loc::zh() {
+                        "更新任务异常退出".to_string()
+                    } else {
+                        "Update task crashed".to_string()
+                    }),
+                ),
+            };
+            let _ = tx.send(ResultMsg::UpdateRun { installed, error });
         }
         Job::Launch { request, label } => {
             let result = crate::engine::launch::launch(&request, crate::core::loc::zh())
@@ -279,6 +318,9 @@ fn handle(job: Job, tx: &Sender<ResultMsg>) {
                 ..Default::default()
             };
             let icon = crate::core::icons::icon_for_app(&prefix, &app, None);
+            if icon == "protonboost" {
+                mark_icon_failed(&app_id);
+            }
             let _ = tx.send(ResultMsg::Icon { req, app_id, icon });
         }
     }
@@ -455,7 +497,7 @@ fn scan_linux_desktops() -> Vec<(String, String, String, String)> {
         }
     }
     let mut result: Vec<(String, String, String, String)> = seen.into_values().collect();
-    result.sort_by(|a, b| a.1.to_lowercase().cmp(&b.1.to_lowercase()));
+    result.sort_by_key(|entry| entry.1.to_lowercase());
     result
 }
 

@@ -186,7 +186,8 @@ fn runner_is_old_weproton(proton: &Path) -> bool {
     if !label.starts_with("we-proton-") {
         return false;
     }
-    label <= "we-proton-11.0-14-10"
+    // 按数字段比较：字典序会把 -14-2 排到 -14-10 后面，判错新老
+    crate::engine::update::version_key(label) <= crate::engine::update::version_key("we-proton-11.0-14-10")
 }
 
 /// 运行 Proton 需要的 `_v2-entry-point` 前缀；不需要或拿不到时返回空

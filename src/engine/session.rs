@@ -18,7 +18,12 @@ pub const KEEPER_FLAG: &str = "--session-keeper";
 static STOP: AtomicBool = AtomicBool::new(false);
 
 pub fn runtime_root() -> PathBuf {
-    let runtime = std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| "/tmp".into());
+    // XDG_RUNTIME_DIR 缺失时不能直接用 /tmp 固定名：全局可写目录里其他用户
+    // 可以抢占会话目录（bus socket、pid 文件都在里面），按 uid 隔开
+    let runtime = std::env::var("XDG_RUNTIME_DIR")
+        .ok()
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| format!("/tmp/protonboost-{}", nix::unistd::Uid::current().as_raw()));
     Path::new(&runtime).join("protonboost/sessions")
 }
 
@@ -230,18 +235,25 @@ pub fn prepare(prefix: &Path, zh: bool) -> Result<Session, SessionError> {
         }
         session.verb = "run".into();
     } else if keeper.is_none() && want_netns {
-        match start_keeper(&dir, prefix) {
-            Ok(pid) => keeper = Some(pid),
-            Err(err) => {
-                // 独立网络起不来（没装 pasta、缺 /dev/net/tun 等）不该让程序彻底跑不了：
-                // 退回宿主网络继续跑，并把原因说清楚。
-                session.notes.push(if zh {
-                    format!("独立网络没起来（{}），已改用宿主网络。", err.message(true))
-                } else {
-                    format!("Isolated network unavailable ({}); using the host network.", err.message(false))
-                });
+        // 与其他启动实例串行：两个进程同时走到这里会各自拉起一份 pasta，
+        // 程序被 nsenter 进不同的网络，共享加速器的前提就破了
+        let creation_lock = hold_session_lock_blocking(&dir);
+        keeper = keeper_pid(&dir);
+        if keeper.is_none() {
+            match start_keeper(&dir, prefix) {
+                Ok(pid) => keeper = Some(pid),
+                Err(err) => {
+                    // 独立网络起不来（没装 pasta、缺 /dev/net/tun 等）不该让程序彻底跑不了：
+                    // 退回宿主网络继续跑，并把原因说清楚。
+                    session.notes.push(if zh {
+                        format!("独立网络没起来（{}），已改用宿主网络。", err.message(true))
+                    } else {
+                        format!("Isolated network unavailable ({}); using the host network.", err.message(false))
+                    });
+                }
             }
         }
+        drop(creation_lock);
     }
 
     if let Some(keeper) = keeper {
@@ -546,6 +558,22 @@ fn hold_session_lock(dir: &Path) -> Option<std::fs::File> {
         .ok()?;
     use std::os::unix::io::AsRawFd;
     let result = unsafe { nix::libc::flock(file.as_raw_fd(), nix::libc::LOCK_EX | nix::libc::LOCK_NB) };
+    if result == 0 { Some(file) } else { None }
+}
+
+/// 建会话用的阻塞版锁：会话目录可能还不存在，先补上
+fn hold_session_lock_blocking(dir: &Path) -> Option<std::fs::File> {
+    let _ = std::fs::create_dir_all(dir);
+    let path = dir.join("lock");
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(path)
+        .ok()?;
+    use std::os::unix::io::AsRawFd;
+    let result = unsafe { nix::libc::flock(file.as_raw_fd(), nix::libc::LOCK_EX) };
     if result == 0 { Some(file) } else { None }
 }
 

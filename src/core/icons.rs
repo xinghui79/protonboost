@@ -125,9 +125,7 @@ fn extracted_icon_path(
     if extract_exe_icon(source, &target, icon_index) {
         return Some(target);
     }
-    let Some(wrestool) = which("wrestool") else {
-        return None;
-    };
+    let wrestool = which("wrestool")?;
     let output = std::process::Command::new(wrestool)
         .arg("-x")
         .arg("-t")
@@ -170,7 +168,8 @@ fn search_icon_tree(root: &Path, app_name: &str, limit: usize) -> Option<PathBuf
             if *scanned > limit {
                 return;
             }
-            if path.is_dir() {
+            // 不跟进符号链接，免得链接环白耗预算
+            if path.is_dir() && !path.is_symlink() {
                 walk(&path, wanted, best, scanned, limit);
             } else {
                 let ext = path

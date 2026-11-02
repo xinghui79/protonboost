@@ -57,6 +57,43 @@ pub fn process_start_time(pid: i32) -> String {
     }
 }
 
+/// 进程的启动时刻（/proc/<pid>/stat 第 22 字段，开机以来的 tick 数）。
+/// 延时强杀前用它确认 pid 没有被复用：时刻变了就说明是另一个进程
+pub fn process_start_ticks(pid: i32) -> Option<u64> {
+    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    let after = stat.rsplit_once(')')?.1;
+    after.split_whitespace().nth(19)?.parse().ok()
+}
+
+/// 路径串里是否出现 dir 之下的路径（按分隔符对齐）。
+/// 直接 contains 会把 `…/Game2` 算进 `…/Game` 头上，兄弟目录被连坐
+pub fn mentions_path_under(value: &str, dir: &str) -> bool {
+    if dir.is_empty() || value.is_empty() {
+        return false;
+    }
+    let boundary = |bytes: &[u8], index: usize| -> bool {
+        matches!(bytes.get(index), None | Some(b'/') | Some(b'\\') | Some(b'"'))
+    };
+    let value = value.as_bytes();
+    let dir = dir.as_bytes();
+    let mut start = 0;
+    while let Some(pos) = value[start..]
+        .windows(dir.len())
+        .position(|window| window == dir)
+    {
+        let pos = start + pos;
+        let end = pos + dir.len();
+        // 前面是分隔符、引号或 =（键值对参数）都算路径起点；后面是分隔符
+        // 或结尾才算完整目录名——`…/Game` 不能匹配 `…/Game2`
+        let before_ok = pos == 0 || matches!(value[pos - 1], b'/' | b'\\' | b'"' | b'=');
+        if before_ok && boundary(value, end) {
+            return true;
+        }
+        start = pos + 1;
+    }
+    false
+}
+
 fn process_env(pid: i32) -> HashMap<String, String> {
     let mut env = HashMap::new();
     let Ok(bytes) = std::fs::read(format!("/proc/{pid}/environ")) else {
@@ -196,26 +233,6 @@ pub fn session_host_pids(procs: &[ProcEntry]) -> HashSet<i32> {
     hosts
 }
 
-pub fn is_wine_process(proc: &ProcEntry) -> bool {
-    Path::new(&proc.exe)
-        .file_name()
-        .and_then(|n| n.to_str())
-        .is_some_and(|name| name.starts_with("wine"))
-        && proc.name != "wineserver"
-}
-
-pub fn app_own_processes(procs: &[ProcEntry], app_id: &str, hosts: &HashSet<i32>) -> Vec<ProcEntry> {
-    procs
-        .iter()
-        .filter(|proc| {
-            proc.app_id == app_id
-                && !WINE_SESSION_PROCESSES.contains(&proc.name.as_str())
-                && !hosts.contains(&proc.pid)
-        })
-        .cloned()
-        .collect()
-}
-
 /// 关闭应用的目标进程集合：APP_ID 匹配的 + 命令行/可执行文件落在应用
 /// 安装目录内的（UU 这类应用被关闭后，其 Windows 服务会重新拉起界面/
 /// 托盘进程，那些进程由 services.exe 启动、环境里没有 APP_ID，会漏判）
@@ -234,7 +251,8 @@ pub fn app_close_targets(
         }
         let from_app_id = !app_id.is_empty() && proc.app_id == app_id;
         let from_dir = !install_dir.is_empty()
-            && (proc.command.contains(install_dir) || proc.exe.contains(install_dir));
+            && (mentions_path_under(&proc.command, install_dir)
+                || mentions_path_under(&proc.exe, install_dir));
         if from_app_id || from_dir {
             matched.push(proc);
         }

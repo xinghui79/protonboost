@@ -20,6 +20,10 @@ MANIFEST="$DATA_DIR/installed-files.txt"
 say() { printf '%s\n' "$*"; }
 die() { printf '错误: %s\n' "$*" >&2; exit 1; }
 
+# 显式传空串时 ${2:-} 不会走默认值，后面 "$PREFIX"/* 会退化成 /*，卸载时按
+# manifest 误删任意绝对路径——空 PREFIX 一律拒绝
+[[ -n "$PREFIX" && "$PREFIX" != "/" ]] || die "PREFIX 不能为空或 /（用法: ./install.sh [install|uninstall] [PREFIX]）"
+
 usage() {
     cat <<'EOF'
 用法: ./install.sh [install|uninstall|help] [PREFIX]

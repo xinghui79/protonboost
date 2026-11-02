@@ -1,28 +1,27 @@
-# AUR 提交用的元数据（makepkg --printsrcinfo 的产物）。
-# 发布 AUR 时与本目录的 PKGBUILD 一起提交到 aur 仓库；
-# source 与 PKGBUILD 顶部的 _repo 发布形态保持一致（GitHub 地址）。
 pkgbase = protonboost
+	pkgdesc = 在 Linux 上用 Proton / Wine 运行 Windows 程序（Rust + Qt 6）
+	pkgver = 0.1.1
+	pkgrel = 1
+	url = https://github.com/xinghui79/protonboost
+	arch = x86_64
+	arch = aarch64
+	license = MIT
+	makedepends = cargo
+	makedepends = cmake
+	makedepends = git
+	makedepends = qt6-base
+	makedepends = qt6-declarative
+	depends = qt6-base
+	depends = qt6-declarative
+	depends = qt6-svg
+	depends = curl
+	depends = tar
+	depends = util-linux
+	optdepends = passt: 前缀的独立网络（netns）
+	optdepends = wine: 没有 Proton 时也可以用它跑程序
+	optdepends = icoextract: 从 exe 里抠图标的备用方案
+	options = !lto
+	source = protonboost::git+https://github.com/xinghui79/protonboost
+	sha256sums = SKIP
+
 pkgname = protonboost
-pkgver = 0.1.0
-pkgrel = 1
-pkgdesc = 在 Linux 上用 Proton / Wine 运行 Windows 程序（Rust + Qt 6）
-url = https://github.com/xinghui79/protonboost
-maintainer = xinghui79 <xinghui79@qq.com>
-arch = x86_64
-arch = aarch64
-license = MIT
-makedepends = cargo
-makedepends = cmake
-makedepends = qt6-base
-makedepends = qt6-declarative
-depends = qt6-base
-depends = qt6-declarative
-depends = qt6-svg
-depends = curl
-depends = tar
-depends = util-linux
-optdepends = passt: 前缀的独立网络（netns）
-optdepends = wine: 没有 Proton 时也可以用它跑程序
-optdepends = icoextract: 从 exe 里抠图标的备用方案
-source = protonboost::git+https://github.com/xinghui79/protonboost.git
-sha256sums = SKIP

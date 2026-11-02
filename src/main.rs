@@ -122,16 +122,22 @@ fn main() {
     }
 
     if let Some(pos) = args.iter().position(|arg| arg == "--run") {
-        let exe = args.get(pos + 1).cloned().unwrap_or_default();
-        run_saved(&exe);
+        let Some(exe) = args.get(pos + 1).filter(|value| !value.is_empty()) else {
+            eprintln!("protonboost: --run 后面要跟 exe 或快捷方式的路径");
+            std::process::exit(2);
+        };
+        run_saved(exe);
         return;
     }
 
     // 启动模式：--configure <exe> 只显示配置对话框
     let configure_mode = match args.iter().position(|arg| arg == "--configure") {
         Some(pos) => {
-            let exe = args.get(pos + 1).cloned().unwrap_or_default();
-            let _ = bridge::STARTUP.set(exe);
+            let Some(exe) = args.get(pos + 1).filter(|value| !value.is_empty()) else {
+                eprintln!("protonboost: --configure 后面要跟 exe 或快捷方式的路径");
+                std::process::exit(2);
+            };
+            let _ = bridge::STARTUP.set(exe.clone());
             true
         }
         None => false,
@@ -188,19 +194,23 @@ fn main() {
 
     jobs::init();
 
-    // 单实例：管理器已运行时通知它显示窗口后退出
+    // 单实例：管理器已运行时通知它显示窗口后退出。
+    // configure 模式只开个临时配置窗口，不接管单实例套接字——否则会把
+    // 常驻管理器的唤起通道整个抢走。
     if !configure_mode && ipc::notify_existing() {
         return;
     }
-    let (tx, rx) = std::sync::mpsc::channel::<()>();
-    ipc::listen(tx);
-    {
-        let events = jobs::events().clone();
-        std::thread::spawn(move || {
-            while rx.recv().is_ok() {
-                let _ = events.send(jobs::Event::ToggleWindow);
-            }
-        });
+    if !configure_mode {
+        let (tx, rx) = std::sync::mpsc::channel::<()>();
+        ipc::listen(tx);
+        {
+            let events = jobs::events().clone();
+            std::thread::spawn(move || {
+                while rx.recv().is_ok() {
+                    let _ = events.send(jobs::Event::ToggleWindow);
+                }
+            });
+        }
     }
 
     cxx_qt::init_crate!(protonboost);
@@ -294,13 +304,30 @@ fn tray_icon_path() -> PathBuf {
             return candidate;
         }
     }
-    // 仓库内的图标（源码运行时）
-    std::env::current_exe()
-        .ok()
-        .and_then(|exe| exe.ancestors().nth(3).map(|dir| dir.to_path_buf()))
-        .map(|dir| dir.join("icons/protonboost.png"))
-        .filter(|path| path.is_file())
-        .unwrap_or_else(|| PathBuf::from("protonboost"))
+    // 仓库内的图标（源码运行时）：exe 在 <仓库>/target/<profile>/ 下
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.ancestors().nth(2) {
+            let path = dir.join("assets/icons/protonboost.png");
+            if path.is_file() {
+                return path;
+            }
+        }
+    }
+    // 兜底：把构建期嵌进二进制的图标铺到缓存目录——二进制被单独拷走、
+    // 没装图标文件时托盘也不会空白（此前这里返回一个不存在的相对路径）
+    embedded_tray_icon()
+}
+
+/// 构建期嵌进二进制的应用图标；运行时铺到图标缓存目录
+fn embedded_tray_icon() -> PathBuf {
+    const ICON: &[u8] = include_bytes!("../assets/icons/protonboost.png");
+    let dir = core::paths::gui_icon_dir();
+    let path = dir.join("protonboost.png");
+    if !path.is_file() {
+        let _ = std::fs::create_dir_all(&dir);
+        let _ = std::fs::write(&path, ICON);
+    }
+    path
 }
 
 fn tray_toggle() {
@@ -309,4 +336,14 @@ fn tray_toggle() {
 
 fn tray_quit() {
     let _ = jobs::events().send(jobs::Event::Quit);
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn 嵌入的托盘图标是完整PNG() {
+        let icon = include_bytes!("../assets/icons/protonboost.png");
+        assert!(icon.len() > 1000, "图标太小，像是占位文件");
+        assert_eq!(&icon[..8], b"\x89PNG\r\n\x1a\n", "PNG 魔数不对");
+    }
 }

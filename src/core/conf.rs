@@ -140,7 +140,7 @@ impl ConfigEntry {
     }
 
     /// 写盘：改名时旧文件移动到新 exe 对应的哈希文件名
-    pub fn write(&self) -> PathBuf {
+    pub fn write(&self) -> Result<PathBuf, String> {
         let path = cache_file_for_path(&self.exe);
         if !self.file.is_empty() && Path::new(&self.file) != path && Path::new(&self.file).is_file() {
             let _ = std::fs::remove_file(&self.file);
@@ -172,14 +172,16 @@ impl ConfigEntry {
         }
         text.push_str(&format!("source={}\n", self.source));
         if let Some(parent) = path.parent() {
-            let _ = std::fs::create_dir_all(parent);
+            std::fs::create_dir_all(parent).map_err(|err| err.to_string())?;
         }
-        let _ = std::fs::write(&path, text);
-        path
+        std::fs::write(&path, text).map_err(|err| err.to_string())?;
+        Ok(path)
     }
 }
 
-/// 按修改时间从新到旧列出全部配置；exe 已不存在的直接删掉
+/// 按修改时间从新到旧列出全部配置；exe 没了且所在目录还在的（确实被删了
+/// 这个文件）顺手清掉。目录也不在的先留着——可能是外置盘/网络盘没挂载，
+/// 自动删会把用户的运行设置误清掉；这些条目在列表里带「目标不存在」标记
 pub fn collect_cache_entries() -> Vec<ConfigEntry> {
     let dir = association_dir();
     let mut entries: Vec<(std::time::SystemTime, ConfigEntry)> = Vec::new();
@@ -193,19 +195,20 @@ pub fn collect_cache_entries() -> Vec<ConfigEntry> {
             let Some(exe) = data.get("exe").cloned() else {
                 continue;
             };
-            if !expand_path(&exe).exists() {
+            let exe_path = expand_path(&exe);
+            if !exe_path.exists() && exe_path.parent().is_some_and(|p| p.is_dir()) {
                 let _ = std::fs::remove_file(&path);
                 continue;
             }
             let modified = entry.metadata().and_then(|m| m.modified()).unwrap_or(std::time::UNIX_EPOCH);
             let mut config = ConfigEntry::from_map(&data, &path.to_string_lossy());
             if config.name.is_empty() {
-                config.name = crate::core::scan::inferred_exe_name(&expand_path(&exe), None);
+                config.name = crate::core::scan::inferred_exe_name(&exe_path, None);
             }
             entries.push((modified, config));
         }
     }
-    entries.sort_by(|a, b| b.0.cmp(&a.0));
+    entries.sort_by_key(|entry| std::cmp::Reverse(entry.0));
     entries.into_iter().map(|(_, entry)| entry).collect()
 }
 
