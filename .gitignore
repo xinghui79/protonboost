@@ -18,3 +18,7 @@ dist/
 /packaging/*.pkg.tar.*
 /packaging/*.tar.gz
 /packaging/*.tar.zst
+
+# deb 构建产物（build-deb.sh 输出在仓库根）
+/packaging/*.deb
+/protonboost_*.deb

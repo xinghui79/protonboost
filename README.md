@@ -54,6 +54,33 @@ PROTONBOOST_NO_BUILD=1 ./install.sh
 要么把这些权限全开（等于没沙盒），要么根本跑不起来。所以走源码 + 安装脚本这条路，
 想系统级安装就把 `PREFIX` 指到 `/usr/local`（用 `sudo`）。
 
+## 打包
+
+三发行版的打包文件都在 `packaging/`：
+
+**Arch / pacman（含 AUR）**
+
+```bash
+cd packaging
+makepkg -si                 # 构建并安装
+```
+
+发布 AUR：把 `PKGBUILD` 与 `.SRCINFO` 推到 AUR 的 `protonboost` git 仓库即可，
+发布前把 PKGBUILD 顶部的 `_repo` 换成你的 GitHub 地址（本地构建不用动，默认
+`file://` 指向当前仓库）。
+
+**Debian / Ubuntu（deb）**
+
+```bash
+packaging/deb/build-deb.sh          # 产出 protonboost_<版本>_<架构>.deb
+sudo apt install ./protonboost_0.1.0_amd64.deb
+```
+
+脚本自动读版本、检测架构（amd64/arm64）；Qt6 的依赖同时兼容 t64 命名
+（Ubuntu 24.04+）与旧命名（Debian 12）。
+
+其它发行版用 `./install.sh`（装到 `~/.local`，不需要打包）。
+
 ## 使用
 
 ```bash
