@@ -291,6 +291,18 @@ pub fn prepare(prefix: &Path, zh: bool) -> Result<Session, SessionError> {
             session
                 .env
                 .push(("DBUS_SESSION_BUS_ADDRESS".into(), format!("unix:path={}", dir.join("bus").display())));
+            // fcitx5 联动：桥通了之后，命名空间里的程序能连上宿主的输入法。
+            // 宿主没在跑 fcitx5 时不设，免得 GUI 程序去连不存在的输入法。
+            if host_has_fcitx5() {
+                for (key, value) in [
+                    ("GTK_IM_MODULE", "fcitx"),
+                    ("QT_IM_MODULE", "fcitx"),
+                    ("XMODIFIERS", "@im=fcitx"),
+                    ("SDL_IM_MODULE", "fcitx"),
+                ] {
+                    session.env.push((key.into(), value.into()));
+                }
+            }
         }
         if session.active {
             session.notes.push(if zh {
@@ -305,6 +317,16 @@ pub fn prepare(prefix: &Path, zh: bool) -> Result<Session, SessionError> {
 
 fn which(name: &str) -> bool {
     crate::core::paths::which(name).is_some()
+}
+
+/// 宿主上 fcitx5 是否在跑（输入法环境变量只在它活着时才设）
+fn host_has_fcitx5() -> bool {
+    Command::new("pgrep")
+        .arg("-x")
+        .arg("fcitx5")
+        .output()
+        .map(|out| out.status.success())
+        .unwrap_or(false)
 }
 
 fn start_keeper(dir: &Path, prefix: &Path) -> Result<u32, SessionError> {
@@ -566,6 +588,14 @@ pub fn keeper_main(dir: &Path) -> ! {
     // 命名空间里的游戏要能连上宿主的 Steam 客户端（127.0.0.1:57343）
     let mut steam_forward = crate::engine::steam_forward::SteamForward::new();
     steam_forward.update();
+
+    // D-Bus 会话桥：命名空间里的程序拿 uid 0 去 SASL 认证，宿主总线不认，
+    // 这个代理把认证行改写成真实 uid 再转给总线。托盘、通知、fcitx5 都靠它。
+    if let Some(bus) = crate::engine::dbus_bridge::host_bus_address() {
+        let listen = dir.join("bus");
+        let _ = std::fs::remove_file(&listen);
+        crate::engine::dbus_bridge::start(&listen, &bus, outside_uid());
+    }
 
     let mut seen = false;
     let mut empty_since: Option<Instant> = None;

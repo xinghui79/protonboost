@@ -6,6 +6,7 @@
 //! - `launch`：拼环境变量与命令行，把程序拉起来并写运行日志
 //! - `update`：GE-Proton 的在线安装与版本更新
 
+pub mod dbus_bridge;
 pub mod launch;
 pub mod logs;
 pub mod overlay;
