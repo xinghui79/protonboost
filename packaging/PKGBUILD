@@ -1,18 +1,17 @@
-# Maintainer: ProtonBoost <protonboost@example.com>
+# Maintainer: xinghui79 <xinghui79@qq.com>
 # 构建：makepkg -f        （只出包）
 # 安装：makepkg -si       （构建 + sudo 装到 /usr）
 # 用 rustup 装了 rust 的话，makepkg 会认为缺 cargo：加 --nodeps
 #
-# 本地开发时 source 指向当前 git 仓库；发布到 AUR 前，把 _repo 换成
-#   _repo="git+https://github.com/<you>/protonboost"
-# 或用环境变量：PROTONBOOST_REPO=git+https://... makepkg -f
+# source 默认指向 GitHub 仓库；本地开发构建时用环境变量指回本地：
+#   PROTONBOOST_REPO="file:///path/to/protonboost" makepkg -f
 
 pkgname=protonboost
 pkgver=0.1.0
 pkgrel=1
 pkgdesc="在 Linux 上用 Proton / Wine 运行 Windows 程序（Rust + Qt 6）"
 arch=('x86_64' 'aarch64')
-url="https://github.com/protonboost-linux/protonboost"
+url="https://github.com/xinghui79/protonboost"
 license=('MIT')
 depends=(
     'qt6-base'
@@ -35,7 +34,7 @@ optdepends=(
 )
 options=('!lto')
 
-_repo="${PROTONBOOST_REPO:-file://$startdir/..}"
+_repo="${PROTONBOOST_REPO:-git+https://github.com/xinghui79/protonboost}"
 source=("$pkgname::git+$_repo")
 sha256sums=('SKIP')
 

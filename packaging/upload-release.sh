@@ -28,6 +28,12 @@ ACCEPT="Accept: application/vnd.github+json"
 [[ -d dist ]] || { echo "没有 dist/ 产物，先跑 packaging/build-dist.sh" >&2; exit 1; }
 
 CLEAN_CFG="$(mktemp)"
+# 干净配置：绕过全局 gh-proxy insteadOf；HTTP/1.1 规避部分网络下
+# GitHub HTTPS 的 "HTTP2 framing layer" 错误
+cat > "$CLEAN_CFG" <<'EOF'
+[http]
+	version = HTTP/1.1
+EOF
 BODY="$(mktemp)"
 RESP="$(mktemp)"
 trap 'rm -f "$CLEAN_CFG" "$BODY" "$RESP"' EXIT
