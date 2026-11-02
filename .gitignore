@@ -1,0 +1,25 @@
+/target/
+/build/
+dist/
+
+# 编辑器/IDE 的本地配置（路径是本机的，不入库）
+.qmlls.ini
+
+# 本地工作记录与验收截图
+/.workbuddy/
+
+# 删除文件时留下的回收站残留（桌面环境的 trash 实现）
+.Trash-0/
+.Trash-*/
+
+# makepkg 的产物（只留 PKGBUILD）
+/packaging/src/
+/packaging/pkg/
+/packaging/*.pkg.tar.*
+/packaging/*.tar.gz
+/packaging/*.tar.zst
+
+# deb 构建产物（build-deb.sh 输出在仓库根）
+/packaging/*.deb
+/protonboost_*.deb
+/dist/

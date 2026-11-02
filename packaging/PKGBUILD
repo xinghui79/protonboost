@@ -1,0 +1,60 @@
+# Maintainer: ProtonBoost <protonboost@example.com>
+# 构建：makepkg -f        （只出包）
+# 安装：makepkg -si       （构建 + sudo 装到 /usr）
+# 用 rustup 装了 rust 的话，makepkg 会认为缺 cargo：加 --nodeps
+#
+# 本地开发时 source 指向当前 git 仓库；发布到 AUR 前，把 _repo 换成
+#   _repo="git+https://github.com/<you>/protonboost"
+# 或用环境变量：PROTONBOOST_REPO=git+https://... makepkg -f
+
+pkgname=protonboost
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="在 Linux 上用 Proton / Wine 运行 Windows 程序（Rust + Qt 6）"
+arch=('x86_64' 'aarch64')
+url="https://github.com/protonboost-linux/protonboost"
+license=('MIT')
+depends=(
+    'qt6-base'
+    'qt6-declarative'
+    'qt6-svg'
+    'curl'
+    'tar'
+    'util-linux'
+)
+makedepends=(
+    'cargo'
+    'cmake'
+    'qt6-base'
+    'qt6-declarative'
+)
+optdepends=(
+    'passt: 前缀的独立网络（netns）'
+    'wine: 没有 Proton 时也可以用它跑程序'
+    'icoextract: 从 exe 里抠图标的备用方案'
+)
+options=('!lto')
+
+_repo="${PROTONBOOST_REPO:-file://$startdir/..}"
+source=("$pkgname::git+$_repo")
+sha256sums=('SKIP')
+
+build() {
+    cd "$pkgname"
+    export CARGO_TARGET_DIR="$srcdir/target"
+    cargo build --release --locked
+}
+
+package() {
+    cd "$pkgname"
+    install -Dm755 "$srcdir/target/release/protonboost" \
+        "$pkgdir/usr/bin/protonboost"
+
+    local file
+    for file in assets/applications/*.desktop; do
+        install -Dm644 "$file" "$pkgdir/usr/share/applications/$(basename "$file")"
+    done
+
+    install -Dm644 assets/icons/protonboost.png "$pkgdir/usr/share/icons/hicolor/512x512/apps/protonboost.png"
+    install -Dm644 assets/icons/protonboost.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/protonboost.svg"
+}

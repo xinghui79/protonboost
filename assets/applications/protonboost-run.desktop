@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Run Windows Software
+Name[zh_CN]=运行Windows软件
+Comment=Run Windows executables with Proton
+Exec=protonboost --run %f
+Icon=protonboost
+MimeType=application/x-ms-dos-executable;application/x-msdownload;application/vnd.microsoft.portable-executable;
+Terminal=false
+NoDisplay=true

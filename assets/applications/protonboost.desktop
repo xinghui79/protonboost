@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=ProtonBoost
+Name[zh_CN]=ProtonBoost
+Comment=Run Windows programs with Proton / Wine
+Exec=protonboost
+Icon=protonboost
+Terminal=false
+Categories=Utility;X-Wine;
+StartupNotify=false

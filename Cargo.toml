@@ -1,0 +1,23 @@
+[package]
+name = "protonboost"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+cxx = "1.0.205"
+cxx-qt = "0.10.0"
+cxx-qt-lib = { version = "0.10.0", features = ["qt_full"] }
+encoding_rs = "0.8.44"
+nix = { version = "0.31.3", features = ["signal", "process"] }
+serde_json = "1"
+sha2 = "0.10"
+
+[build-dependencies]
+cxx-qt-build = { version = "0.10.0", features = ["link_qt_object_files"] }
+
+[profile.release]
+# 发布版：链接期优化 + 去符号。二进制更小，热路径（进程扫描、图标提取）
+# 里的内联也更充分
+lto = "thin"
+codegen-units = 1
+strip = true
