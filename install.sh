@@ -56,15 +56,22 @@ EOF
 }
 
 build_manager() {
-    if [[ "${PROTONBOOST_NO_BUILD:-0}" != "1" ]]; then
+    if [[ -x target/release/protonboost ]]; then
+        BUILD_BIN=target/release/protonboost
+    elif [[ -x protonboost ]]; then
+        # 便携包 / 预编译二进制：解压即装，不需要 cargo
+        BUILD_BIN=protonboost
+        say "使用自带的二进制，跳过构建"
+    elif [[ "${PROTONBOOST_NO_BUILD:-0}" == "1" ]]; then
+        die "没有 target/release/protonboost，先 cargo build --release"
+    else
         require_qt
         command -v cargo >/dev/null 2>&1 \
             || die "需要 cargo 来构建（或设 PROTONBOOST_NO_BUILD=1 用现成产物）"
         say "构建 protonboost（首次较慢）..."
         cargo build --release
+        BUILD_BIN=target/release/protonboost
     fi
-    [[ -x target/release/protonboost ]] \
-        || die "没有 target/release/protonboost，先 cargo build --release"
 }
 
 refresh_caches() {
@@ -83,7 +90,7 @@ do_install() {
     tmp="$(mktemp)"
     trap 'rm -f "${tmp:-}"' EXIT
 
-    install -Dm755 target/release/protonboost "$BIN_DIR/protonboost"
+    install -Dm755 "$BUILD_BIN" "$BIN_DIR/protonboost"
     printf '%s\n' "$BIN_DIR/protonboost" >> "$tmp"
 
     local file

@@ -22,3 +22,4 @@ dist/
 # deb 构建产物（build-deb.sh 输出在仓库根）
 /packaging/*.deb
 /protonboost_*.deb
+/dist/
