@@ -141,7 +141,7 @@ protonboost --doctor               # 环境诊断：缺什么命令、运行器�
 把 Windows 版加速器（网易 UU 的「路由模式」、雷神的「模式三」）和游戏装进
 **同一个前缀**，加速器接管的就是游戏所在的网络；关掉开关回到宿主网络。
 
-加速器请使用 **WE-Proton** 运行器（管理器内一键下载）——它自带 wintun，
+加速器请使用 [**WE-Proton**](https://github.com/SHORiN-KiWATA/we-proton) 运行器（管理器内一键下载）——它自带 wintun，
 让加速器驱动在 Wine 里能真正建起 TUN；普通游戏的 NDIS 内核驱动在 Wine
 里无法工作。Steam 游戏把启动选项设成 `protonboost --exec %command%` 即可
 共享同一网络。
@@ -155,6 +155,8 @@ protonboost --doctor               # 环境诊断：缺什么命令、运行器�
 | --- | --- |
 | 环境变量 | `PROTONBOOST_RUNNER` / `PROTON_GE_PATH` 指向的 proton 或 wine |
 | Steam 兼容性工具 | `~/.local/share/Steam/compatibilitytools.d/<名字>/proton`（WE-Proton 在这） |
+
+WE-Proton 上游：[SHORiN-KiWATA/we-proton](https://github.com/SHORiN-KiWATA/we-proton)（基于 GE/DW 魔改，自带 wintun）。
 | Steam 官方 Proton | `steamapps/common/Proton *`，含其他 Steam 库 |
 | 系统级 / Flatpak | `/usr/share/steam/...`、`~/.var/app/com.valvesoftware.Steam/...` |
 | Lutris | `~/.local/share/lutris/runners/{proton,wine}` |
