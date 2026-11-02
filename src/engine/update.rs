@@ -243,8 +243,11 @@ pub fn install(candidates: &[Candidate]) -> Result<usize, String> {
         let mut downloaded = false;
         for mirror in mirrors() {
             let _ = std::fs::remove_file(&archive);
+            // --speed-limit/--speed-time：30 秒内平均低于 100 KB/s 视为卡死，
+            // 断开换下一个镜像，避免挂在慢速直连上耗几小时
             downloaded = Command::new("curl")
-                .args(["-fsSL", "--connect-timeout", "30", "-o"])
+                .args(["-fsSL", "--connect-timeout", "30",
+                       "--speed-time", "30", "--speed-limit", "102400", "-o"])
                 .arg(&archive)
                 .arg(proxied(&mirror, &release.archive_url))
                 .status()
