@@ -51,10 +51,10 @@ package() {
         "$pkgdir/usr/bin/protonboost"
 
     local file
-    for file in desktop/*.desktop; do
+    for file in assets/applications/*.desktop; do
         install -Dm644 "$file" "$pkgdir/usr/share/applications/$(basename "$file")"
     done
 
-    install -Dm644 icons/protonboost.png "$pkgdir/usr/share/icons/hicolor/512x512/apps/protonboost.png"
-    install -Dm644 icons/protonboost.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/protonboost.svg"
+    install -Dm644 assets/icons/protonboost.png "$pkgdir/usr/share/icons/hicolor/512x512/apps/protonboost.png"
+    install -Dm644 assets/icons/protonboost.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/protonboost.svg"
 }

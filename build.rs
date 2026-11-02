@@ -30,7 +30,7 @@ fn main() {
     // 覆盖层 uid 辅助库：构建期编译成 .so 嵌进二进制，用户机器上就不再需要 C
     // 编译器。构建机上没有 cc 时写入空占位，运行时检测到不是有效 ELF 会回退
     // 到现场编译（老行为）。
-    println!("cargo:rerun-if-changed=assets/overlay-uid/overlay-uid.c");
+    println!("cargo:rerun-if-changed=native/overlay-uid/overlay-uid.c");
     let out_dir = std::env::var("OUT_DIR").unwrap_or_default();
     if !out_dir.is_empty() {
         for (bits, flag) in [("64", "-m64"), ("32", "-m32")] {
@@ -39,7 +39,7 @@ fn main() {
                 .args([
                     flag, "-shared", "-fPIC", "-O2", "-fno-stack-protector",
                     "-U_FORTIFY_SOURCE", "-x", "c",
-                    "assets/overlay-uid/overlay-uid.c", "-o", &out,
+                    "native/overlay-uid/overlay-uid.c", "-o", &out,
                 ])
                 .status()
                 .map(|status| status.success())

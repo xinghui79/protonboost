@@ -19,9 +19,9 @@ use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// 辅助库的 C 源码，单一来源是 assets/overlay-uid/overlay-uid.c。
+/// 辅助库的 C 源码，单一来源是 native/overlay-uid/overlay-uid.c。
 /// 改动会让缓存键变化，重新铺缓存。
-const SOURCE: &str = include_str!("../../assets/overlay-uid/overlay-uid.c");
+const SOURCE: &str = include_str!("../../native/overlay-uid/overlay-uid.c");
 
 /// 构建期编译好的辅助库（见 build.rs）。没有编译器时是空占位。
 const EMBEDDED_64: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/overlay-uid-64.so"));

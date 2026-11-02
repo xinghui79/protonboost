@@ -152,7 +152,7 @@ protonboost --exec %command%
 
 Steam 覆盖层（FPS、成就）要靠 `getuid()` 找宿主客户端。命名空间里 Wine 是 root、
 宿主客户端是普通用户，两边对不上，覆盖层会悄悄失效。ProtonBoost 把一个很小的辅助库
-在**构建期编译好嵌进二进制**（`assets/overlay-uid/`），预加载进游戏后只让覆盖层
+在**构建期编译好嵌进二进制**（`native/overlay-uid/`），预加载进游戏后只让覆盖层
 看到真实 uid——用户机器上不需要装 C 编译器。只有在特殊架构上构建时才会回退到
 现场用 `cc` 编译。
 
@@ -187,8 +187,11 @@ src/engine/              启动引擎
   update.rs              GE / DW 运行器版本检查与安装
 src/core/                扫描、.lnk 解析、图标、配置、进程、导出
 qml/Main.qml             界面
-desktop/                 桌面入口
-icons/                   图标（PNG + SVG）
+assets/applications/     桌面入口（.desktop）
+assets/icons/            图标（PNG + SVG）
+native/overlay-uid/      覆盖层辅助库的 C 源码（构建期编译嵌入）
+packaging/               打包文件（PKGBUILD）
+docs/                    设计文档
 ```
 
 开发提示：只改 QML 也可以直接 `cargo build`——`build.rs` 把 QML 内容哈希塞进

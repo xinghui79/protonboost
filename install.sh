@@ -87,14 +87,14 @@ do_install() {
     printf '%s\n' "$BIN_DIR/protonboost" >> "$tmp"
 
     local file
-    for file in desktop/*.desktop; do
+    for file in assets/applications/*.desktop; do
         install -Dm644 "$file" "$APP_DIR/$(basename "$file")"
         printf '%s\n' "$APP_DIR/$(basename "$file")" >> "$tmp"
     done
 
-    install -Dm644 icons/protonboost.png "$ICON_PNG/protonboost.png"
+    install -Dm644 assets/icons/protonboost.png "$ICON_PNG/protonboost.png"
     printf '%s\n' "$ICON_PNG/protonboost.png" >> "$tmp"
-    install -Dm644 icons/protonboost.svg "$ICON_SVG/protonboost.svg"
+    install -Dm644 assets/icons/protonboost.svg "$ICON_SVG/protonboost.svg"
     printf '%s\n' "$ICON_SVG/protonboost.svg" >> "$tmp"
 
     install -Dm644 "$tmp" "$MANIFEST"

@@ -35,7 +35,7 @@ src/
     steam_forward.rs  命名空间里的游戏连宿主 Steam 客户端（57343）
     update.rs         GE-Proton 的在线安装与更新
     logs.rs           运行日志
-assets/overlay-uid/   覆盖层辅助库的 C 源码（构建期编译嵌入）
+native/overlay-uid/   覆盖层辅助库的 C 源码（构建期编译嵌入）
 qml/Main.qml          全部界面
 ```
 
@@ -91,7 +91,7 @@ qml/Main.qml          全部界面
 
 解法是一个极小的辅助库预加载进游戏：用 `dl_iterate_phdr` 找到覆盖层自己的代码范围，
 **只有覆盖层问到 `getuid()` 时**才回答真实 uid，其他调用者（Wine、TUN 适配器）
-照旧看到 root。C 源码在 `assets/overlay-uid/`，**构建期编译成 64/32 位 .so 嵌进
+照旧看到 root。C 源码在 `native/overlay-uid/`，**构建期编译成 64/32 位 .so 嵌进
 二进制**——用户机器不需要 C 编译器；只有嵌入产物缺架构时才回退到现场 `cc` 编译。
 
 ## Steam %command%
