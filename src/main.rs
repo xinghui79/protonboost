@@ -286,7 +286,7 @@ fn run_saved(exe: &str) {
 fn tray_icon_path() -> PathBuf {
     let candidates = [
         core::paths::data_home().join("icons/hicolor/512x512/apps/protonboost.png"),
-        core::paths::data_home().join("icons/protonboost/apps"),
+        core::paths::data_home().join("icons/hicolor/scalable/apps/protonboost.svg"),
         PathBuf::from("/usr/share/icons/hicolor/512x512/apps/protonboost.png"),
     ];
     for candidate in candidates {

@@ -19,13 +19,15 @@
 - **图形管理器**：应用 / Linux 程序 / 进程三个页面。点一行会在右侧展开检查器（路径、运行器、
   最近日志），也能重命名、导出到应用列表、强制结束进程。添加应用可以选 exe，也可以从安装
   目录里挑。
+- **运行设置**：每个程序可以单独配 Gamescope（全屏 / 分辨率 / FPS 上限 / FSR 超分 /
+  额外参数）、MangoHud、Wayland 原生模式、程序参数、自定义环境变量与 Steam AppID。
 - **命令行入口**：`--run`（桌面入口）、`--configure`（运行设置）、`--exec`（Steam 启动选项）。
 
 ## 依赖
 
 - Rust（构建用）、Qt 6：`qt6-base` `qt6-declarative` `qt6-svg`
-- 运行时：`passt`（独立网络）、`util-linux`（nsenter / unshare）、`curl` + `tar`（下载运行器/运行时）
-- 可选：`wine`（系统 Wine 运行器）、`icoextract`（图标提取）；构建机需要 `cc`（覆盖层辅助库在构建期编译嵌入）
+- 运行时：`passt`（独立网络）、`util-linux`（nsenter / unshare）、`curl` + `tar`（下载运行器/运行时）、`sha512sum`（校验下载）
+- 可选：`wine`（系统 Wine 运行器）、`icoextract`（图标提取）、`notify-send`（运行通知）、`gamescope` / `mangohud`（按需启用）；构建机需要 `cc`（覆盖层辅助库在构建期编译嵌入）
 - 运行器：GE-Proton（界面里一键下载，默认）或任意一份 Proton / Wine，详见下面「运行器」一节
 
 ## 安装
@@ -60,8 +62,9 @@ protonboost --configure 程序.exe   # 只打开某个程序的运行设置
 protonboost --run 程序.exe         # 按保存的配置直接启动
 protonboost --exec <命令>          # 在前缀会话里跑一条命令（Steam 启动选项）
 protonboost --list-runner          # 列出发现的 Proton / Wine
-protonboost --dump-scan            # 打印前缀扫描结果，排查界面为什么空
+protonboost --dump-scan [前缀]     # 打印前缀扫描结果（默认看默认前缀），排查界面为什么空
 protonboost --doctor               # 环境诊断：缺什么命令、运行器在哪、前缀状态
+protonboost --version              # 版本
 ```
 
 - **右键 exe**：装好之后（`./install.sh`），文件管理器里右键任意 exe 有「运行Windows软件」
@@ -95,7 +98,9 @@ protonboost --doctor               # 环境诊断：缺什么命令、运行器�
 | `~/.local/share/protonboost/proton` | 默认前缀（老的 `~/.proton` 会自动沿用；可在运行设置里换成别的） |
 | `~/.cache/protonboost/associations` | 每个程序的运行设置 |
 | `~/.cache/protonboost/logs` | 运行日志与会话日志 |
-| `~/.cache/protonboost/icons` | 从 exe/ico 里抠出来的图标 |
+| `~/.cache/protonboost/icons` | 从 exe/ico 里抠出来的图标（界面缓存） |
+| `~/.local/share/applications/protonboost` | 导出的应用桌面入口 |
+| `~/.local/share/icons/protonboost/apps` | 导出桌面入口用的图标 |
 | `$PREFIX/.protonboost.conf` | 前缀自己的开关（`netns=`，侧栏前缀行右边那个小开关改的就是它） |
 
 ## 运行器
@@ -105,7 +110,7 @@ protonboost --doctor               # 环境诊断：缺什么命令、运行器�
 | 来源 | 位置 |
 | --- | --- |
 | 环境变量 | `PROTONBOOST_RUNNER` / `PROTON_GE_PATH` 指向的 proton 或 wine |
-| Steam 兼容性工具 | `~/.local/share/Steam/compatibilitytools.d/<名字>/proton`（GE、DW、WE 都在这） |
+| Steam 兼容性工具 | `~/.local/share/Steam/compatibilitytools.d/<名字>/proton`（GE、WE 都在这） |
 | Steam 官方 Proton | `steamapps/common/Proton *`，含其他 Steam 库 |
 | 系统级 / Flatpak | `/usr/share/steam/...`、`~/.var/app/com.valvesoftware.Steam/...` |
 | Lutris | `~/.local/share/lutris/runners/{proton,wine}` |
@@ -163,6 +168,8 @@ QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software \
 PROTONBOOST_PAGE=apps PROTONBOOST_SHOT=/tmp/shot.png \
 ./target/debug/protonboost
 ```
+
+`PROTONBOOST_SHOT_DELAY` 可调截图前的等待毫秒数（默认 1500，等动画跑完）。
 
 ## 许可
 

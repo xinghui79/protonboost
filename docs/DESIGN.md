@@ -58,6 +58,24 @@ qml/Main.qml          全部界面
   找不到就自动下载；实在没有就直接跑（部分功能缺失）
 - 32 位程序默认走 Wine 的新 WoW64 模式（`PROTON_USE_WOW64=1`）
 
+## 运行设置与启动链路
+
+每个程序的运行设置（`associations/*.conf`）在启动时由 `launch.rs` 拼成 argv + 环境：
+
+- **Gamescope**：包裹在会话外（留在宿主命名空间），程序自己经 `nsenter` 进会话；
+  选项映射为 `-f`（全屏）、`-w/-h`（分辨率）、`-r`（FPS 上限）、`-F fsr`（超分）
+  及额外参数
+- **MangoHud**：注入 `MANGOHUD=1`
+- **Wayland 原生**：Proton 走 `PROTON_ENABLE_WAYLAND=1`，Wine 走
+  `WINE_GRAPHICS_DRIVER=wayland`；与 Gamescope 互斥（开了 Gamescope 就忽略）
+- **Steam AppID**：注入 `SteamAppId` / `SteamGameId`（Proton 需要）；不填时用
+  `UMU_ID=protonboost` 兜底
+- **环境变量**：程序自己配的优先于会话默认值；另注入四个自描述变量——
+  `PROTONBOOST_APP_ID`、`PROTONBOOST_APP_PATH`、`PROTONBOOST_PREFIX`、
+  `PROTONBOOST_LOG`（最近一次日志路径），脚本可以拿来定位自己的日志
+- Proton 的动词固定 `waitforexitandrun`（`--verb=` 是给 pressure-vessel 的，
+  不能顶替，缺了会报 `Need a verb.`）
+
 ## 独立网络
 
 前缀默认关在单独的 network namespace 里，这是 ProtonBoost 的核心能力：
