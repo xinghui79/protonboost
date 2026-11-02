@@ -300,6 +300,9 @@ pub fn init_prefix(prefix: &Path, runner: &Runner) -> Result<(), String> {
 }
 
 pub fn ensure_prefix(prefix: &Path, runner: &Runner) -> Result<(), String> {
+    // 前缀外壳目录必须先存在：Proton 的 setup_prefix 会在里面创建
+    // pfx.lock 等文件，父目录缺失时 filelock 直接 ENOENT
+    std::fs::create_dir_all(prefix).map_err(|err| err.to_string())?;
     if prefix.join("pfx").is_dir() {
         Ok(())
     } else {
