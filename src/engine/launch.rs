@@ -1,4 +1,5 @@
-//! 拼命令行、拉起程序（原 lib/launch.sh 与 lib/prefix.sh 的启动部分）
+//! 拼环境变量与命令行：把运行器、运行时、独立网络、覆盖层辅助库
+//! 组装成一次真正的启动，并跟踪进程写运行日志
 
 use crate::engine::logs;
 use crate::engine::runners::{self, Runner};

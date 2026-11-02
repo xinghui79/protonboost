@@ -1,4 +1,5 @@
-//! 会话与独立网络命名空间（原 lib/session.sh + lib/helpers.sh 里的 keeper）
+//! 会话与独立网络命名空间：pasta 建网、keeper 进程撑住命名空间，
+//! nsenter 进入、unshare 降权，收摊时全部清理
 //!
 //! 同前缀的程序共用一个 wineserver，也就共用它的显示方式与网络命名空间。
 //! 前缀开了独立网络时，由 pasta 建一个命名空间，keeper 进程待在里面把网络

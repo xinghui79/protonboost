@@ -202,13 +202,6 @@ PROTONBOOST_PAGE=apps PROTONBOOST_SHOT=/tmp/shot.png \
 ./target/debug/protonboost
 ```
 
-## 设计来源
-
-独立网络机制（Linux 程序降权、Steam 覆盖层辅助库、Steam 端口转发）参照了
-[SHORiN-KiWATA/proton-wrapper](https://github.com/SHORiN-KiWATA/proton-wrapper) 的实现思路，
-改写为 Rust。详细差异与还没移植的部分见 [`docs/DESIGN.md`](docs/DESIGN.md)。
-
 ## 许可
 
-MIT。独立网络部分参考了 [SHORiN-KiWATA/proton-wrapper](https://github.com/SHORiN-KiWATA/proton-wrapper)
-的思路（用同样的 Proton 调用方式跑 Windows 程序），现在这套实现是重写的 Rust 版本。
+MIT。整体设计与实现见 [`docs/DESIGN.md`](docs/DESIGN.md)。

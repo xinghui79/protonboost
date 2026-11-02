@@ -1,4 +1,4 @@
-//! 运行日志：`~/.cache/protonboost/logs/<app-id>/latest.log`（原 lib/core.sh 的 setup_run_logging）
+//! 运行日志：`~/.cache/protonboost/logs/<app-id>/latest.log`
 
 use crate::core::paths::cache_home;
 use crate::core::scan;

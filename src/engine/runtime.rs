@@ -1,5 +1,5 @@
 //! Steam Linux Runtime：Proton 是按它自己的容器运行时构建的
-//! （原 lib/launch.sh 的 runtime 部分）。找不到就下一份，下不到就直接跑。
+//! 找不到就依次试下一份，都下不到就直接跑（部分功能会缺失）。
 
 use crate::core::paths::{home, xdg};
 use sha2::{Digest, Sha256};
@@ -112,10 +112,12 @@ fn fetch_text(url: &str) -> Option<String> {
     Some(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
+/// 流式算 SHA-256：运行时包上百 MB，不能整个读进内存
 fn sha256_file(path: &Path) -> Option<String> {
-    let bytes = std::fs::read(path).ok()?;
+    let file = std::fs::File::open(path).ok()?;
+    let mut reader = std::io::BufReader::with_capacity(1 << 20, file);
     let mut hasher = Sha256::new();
-    hasher.update(&bytes);
+    std::io::copy(&mut reader, &mut hasher).ok()?;
     Some(format!("{:x}", hasher.finalize()))
 }
 

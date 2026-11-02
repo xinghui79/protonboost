@@ -138,3 +138,52 @@ fn 覆盖层辅助库已嵌入二进制() {
         eprintln!("警告：辅助库没有嵌入，运行时会回退到现场编译");
     }
 }
+
+#[test]
+fn 版本号提取数字段() {
+    assert_eq!(super::update::version_key("GE-Proton11-11"), vec![11, 11]);
+    assert_eq!(super::update::version_key("11-11"), vec![11, 11]);
+    assert_eq!(super::update::version_key("1792606118 we-proton-ge11-11-31"), vec![1792606118, 11, 11, 31]);
+    assert!(super::update::version_key("no-digits").is_empty());
+}
+
+#[test]
+fn 版本比较() {
+    assert!(super::update::version_newer("10-9", "GE-Proton11-11"));
+    assert!(super::update::version_newer("11-10", "11-11"));
+    assert!(!super::update::version_newer("11-11", "GE-Proton11-11"));
+    assert!(!super::update::version_newer("11-12", "11-11"));
+    // 没有可比数字时退化为字符串不等
+    assert!(super::update::version_newer("abc", "def"));
+}
+
+#[test]
+fn 下载包按主机架构过滤() {
+    assert!(super::update::blocking_arch("GE-Proton11-11-aarch64.tar.gz"));
+    assert!(super::update::blocking_arch("ge-proton-arm64.tar.gz"));
+    assert!(!super::update::blocking_arch("GE-Proton11-11.tar.gz"));
+}
+
+#[test]
+fn 产品别名解析() {
+    assert_eq!(super::runners::product_alias("GE-Proton"), Some("ge"));
+    assert_eq!(super::runners::product_alias(" proton-ge "), Some("ge"));
+    assert_eq!(super::runners::product_alias("we"), Some("we"));
+    assert_eq!(super::runners::product_alias("dw"), None);
+    assert_eq!(super::runners::product_alias(""), None);
+    assert_eq!(super::runners::product_dir_name("ge"), Some("Proton-GE Latest"));
+}
+
+#[test]
+fn 路径规整化() {
+    use crate::core::paths::normalized;
+    assert_eq!(normalized(std::path::Path::new("/a/./b/../c")), std::path::Path::new("/a/c"));
+    assert_eq!(normalized(std::path::Path::new("a/b/../..")), std::path::Path::new(""));
+}
+
+#[test]
+fn 路径展开支持家目录() {
+    use crate::core::paths::expand_path;
+    assert!(expand_path("~/x").starts_with(std::env::var("HOME").unwrap_or_default()));
+    assert_eq!(expand_path("/abs/path"), std::path::Path::new("/abs/path"));
+}

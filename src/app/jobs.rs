@@ -436,7 +436,7 @@ fn scan_linux_desktops() -> Vec<(String, String, String, String)> {
                 continue;
             }
             let exec = section.get("Exec").cloned().unwrap_or_default();
-            if exec.trim().is_empty() || exec.contains("protonboost") || exec.contains("proton-wrapper") {
+            if exec.trim().is_empty() || exec.contains("protonboost") {
                 continue;
             }
             let id = file

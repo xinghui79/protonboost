@@ -1,11 +1,9 @@
-//! GE / DW 运行器的版本检查与安装（原 lib/runners.sh 的 check_update / update）
-//!
-//! 默认运行器是 GE-Proton：开箱即用只需要在界面里点一次「下载」。
-//! WE-Proton 是本地维护版，没有在线安装/更新，装了也能用。
+//! GE-Proton 的版本检查与安装：开箱即用只需要在界面里点一次「下载」。
+//! WE-Proton 是本地手动安装的兼容项，没有在线安装/更新。
 
 use crate::core::paths::cache_home;
 use crate::engine::runners::{local_runner_dir, product_dir_name, steam_runner_dir};
-use sha2::{Digest, Sha256};
+use sha2::{Digest, Sha512};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -44,12 +42,11 @@ fn installed_version(dir: &Path) -> String {
 fn release_url(product: &str) -> Option<String> {
     match product {
         "ge" => Some("https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases/latest".into()),
-        "dw" => Some("https://dawn.wine/api/v1/repos/dawn-winery/dwproton/releases/latest".into()),
         _ => None,
     }
 }
 
-fn blocking_arch(name: &str) -> bool {
+pub(crate) fn blocking_arch(name: &str) -> bool {
     let lower = name.to_lowercase();
     match std::env::consts::ARCH {
         "x86_64" => lower.contains("aarch64") || lower.contains("arm64"),
@@ -110,7 +107,7 @@ pub fn latest_release(product: &str) -> Option<Release> {
 }
 
 /// 版本号里的数字段：`GE-Proton11-11` 与 `11-11` 都得到 [11, 11]
-fn version_key(value: &str) -> Vec<u64> {
+pub(crate) fn version_key(value: &str) -> Vec<u64> {
     let mut parts: Vec<u64> = Vec::new();
     let mut current = String::new();
     for ch in value.chars() {
@@ -127,7 +124,7 @@ fn version_key(value: &str) -> Vec<u64> {
     parts
 }
 
-fn version_newer(current: &str, latest: &str) -> bool {
+pub(crate) fn version_newer(current: &str, latest: &str) -> bool {
     let have = version_key(current);
     let want = version_key(latest);
     if have.is_empty() || want.is_empty() {
@@ -142,7 +139,7 @@ pub fn check() -> Vec<Candidate> {
     // 机器上一个 Proton / Wine 都没有：这时把「装 GE-Proton」也当成一条待办，
     // 否则界面上根本没有下载运行器的入口，程序永远跑不起来。
     let no_runner = crate::engine::runners::discover().is_empty();
-    for product in ["ge", "dw"] {
+    for product in ["ge"] {
         let Some(dir_name) = product_dir_name(product) else { continue };
         let targets: Vec<PathBuf> = install_dirs()
             .into_iter()
@@ -178,15 +175,13 @@ pub fn check() -> Vec<Candidate> {
     found
 }
 
+/// 流式算 SHA-512：压缩包有几百 MB，绝不能整个读进内存
 fn sha512_file(path: &Path) -> Option<String> {
-    let bytes = std::fs::read(path).ok()?;
-    let mut hasher = Sha256::new();
-    hasher.update(&bytes);
-    // sha512 用外部命令更省事，这里只做非空校验的兜底
-    let _ = hasher.finalize();
-    let output = Command::new("sha512sum").arg(path).output().ok()?;
-    let text = String::from_utf8_lossy(&output.stdout).to_string();
-    text.split_whitespace().next().map(|value| value.to_string())
+    let file = std::fs::File::open(path).ok()?;
+    let mut reader = std::io::BufReader::with_capacity(1 << 20, file);
+    let mut hasher = Sha512::new();
+    std::io::copy(&mut reader, &mut hasher).ok()?;
+    Some(format!("{:x}", hasher.finalize()))
 }
 
 pub fn install(candidates: &[Candidate]) -> Result<usize, String> {
@@ -260,13 +255,8 @@ pub fn describe(candidates: &[Candidate]) -> String {
     candidates
         .iter()
         .map(|candidate| {
-            let product = match candidate.product.as_str() {
-                "ge" => "GE-Proton",
-                "dw" => "DW-Proton",
-                other => other,
-            };
             let current = if candidate.current.is_empty() { "—".to_string() } else { candidate.current.clone() };
-            format!("{product}: {current} → {}", candidate.latest)
+            format!("GE-Proton: {current} → {}", candidate.latest)
         })
         .collect::<Vec<_>>()
         .join("\n")

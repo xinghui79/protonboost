@@ -1,4 +1,5 @@
-//! 运行器发现与解析（原 lib/utils.sh 的 collect_runners 与 lib/product.sh）
+//! 运行器发现与解析：扫 Steam / lutris / 本地目录，找出机器上所有可用的
+//! Proton / Wine，按优先级排序；也负责把界面选的名字解析成具体路径
 
 use crate::core::paths::{expand_path, home, xdg};
 use std::collections::HashSet;
@@ -35,11 +36,10 @@ pub fn steam_root_dir() -> PathBuf {
     home().join(".steam/root")
 }
 
-/// ge / dw / we 的产品别名 → 规范名
+/// ge / we 的产品别名 → 规范名
 pub fn product_alias(value: &str) -> Option<&'static str> {
     match value.trim().to_lowercase().as_str() {
         "ge" | "ge-proton" | "proton-ge" => Some("ge"),
-        "dw" | "dwproton" | "dw-proton" | "dw_proton" => Some("dw"),
         "we" | "weproton" | "we-proton" | "we_proton" => Some("we"),
         _ => None,
     }
@@ -49,7 +49,6 @@ pub fn product_alias(value: &str) -> Option<&'static str> {
 pub fn product_dir_name(product: &str) -> Option<&'static str> {
     match product {
         "ge" => Some("Proton-GE Latest"),
-        "dw" => Some("DW-Proton Latest"),
         "we" => Some("WE-Proton Latest"),
         _ => None,
     }
@@ -224,9 +223,8 @@ pub fn discover() -> Vec<Runner> {
     }
 
     for base in [steam_dir.join("compatibilitytools.d"), steam_root.join("compatibilitytools.d")] {
-        for product in ["Proton-GE Latest", "DW-Proton Latest"] {
-            collector.add("proton", "steam", &base.join(product).join("proton"));
-        }
+        // GE 已作为默认产品排最前；WE 是本地手动安装时的兼容项
+        collector.add("proton", "steam", &base.join("WE-Proton Latest").join("proton"));
         collector.add_glob("proton", "steam", &base, "proton");
     }
     collector.add_glob("proton", "local", &local_dir, "proton");
