@@ -181,6 +181,17 @@ pub fn collect_common_prefixes() -> Vec<PathBuf> {
     values
 }
 
+/// 折叠同一前缀的两种视图：外壳（compat 根，如 …/proton）与它的 Wine 内层
+/// （…/proton/pfx）。进程环境里 PROTONBOOST_PREFIX 指向外壳、WINEPREFIX 指向
+/// 内层，两者会各自进入列表，侧栏就会显示成两条；只保留外壳。
+pub fn fold_inner_pfx(values: Vec<PathBuf>) -> Vec<PathBuf> {
+    let inners: Vec<PathBuf> = values.iter().map(|other| other.join("pfx")).collect();
+    values
+        .into_iter()
+        .filter(|path| !inners.contains(path))
+        .collect()
+}
+
 /// 进程页的前缀列表：运行中的优先，其次登记的，再次常见位置
 pub fn collect_process_prefixes() -> Vec<PathBuf> {
     let mut values = Vec::new();
@@ -194,7 +205,7 @@ pub fn collect_process_prefixes() -> Vec<PathBuf> {
             add_unique_path(&mut values, &mut seen, &prefix);
         }
     }
-    values
+    fold_inner_pfx(values)
 }
 
 /// 前缀里配置的 Proton：config_info 第二行是 runner 里 proton 脚本的位置
@@ -236,4 +247,34 @@ pub fn set_netns(prefix: &Path, enabled: bool) -> Result<(), String> {
     lines.push(format!("netns={}", if enabled { 1 } else { 0 }));
     std::fs::create_dir_all(prefix).map_err(|err| err.to_string())?;
     std::fs::write(&conf, lines.join("\n") + "\n").map_err(|err| err.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn 内层pfx折叠进外壳() {
+        let shell = PathBuf::from("/home/u/.local/share/protonboost/proton");
+        let values = vec![
+            shell.clone(),
+            shell.join("pfx"),
+            PathBuf::from("/home/u/.wine"),
+        ];
+        let folded = fold_inner_pfx(values);
+        assert_eq!(
+            folded,
+            vec![shell, PathBuf::from("/home/u/.wine")],
+            "外壳保留、内层 pfx 被折叠掉，其它前缀不受影响"
+        );
+    }
+
+    #[test]
+    fn 没有内层时原样保留() {
+        let values = vec![
+            PathBuf::from("/home/u/.wine"),
+            PathBuf::from("/home/u/Games/test"),
+        ];
+        assert_eq!(fold_inner_pfx(values.clone()), values);
+    }
 }
