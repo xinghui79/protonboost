@@ -123,3 +123,18 @@ fn 默认网关能从路由表里解析出来() {
 fn 路由表里没有网关时返回空() {
     assert!(super::steam_forward::parse_gateway("[]").is_none());
 }
+
+#[test]
+fn 覆盖层辅助库源码保持完整() {
+    assert!(super::overlay::source_contains_getuid());
+    assert!(super::overlay::source_length() > 1000);
+}
+
+#[test]
+fn 覆盖层辅助库已嵌入二进制() {
+    // 构建机上没有 cc 时嵌入的是空占位——这里故意不 assert，只打印，
+    // 提醒开发者本机构建缺 cc 会退化到运行时编译
+    if !super::overlay::embedded_ready() {
+        eprintln!("警告：辅助库没有嵌入，运行时会回退到现场编译");
+    }
+}

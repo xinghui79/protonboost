@@ -1354,8 +1354,8 @@ ApplicationWindow {
                         Text {
                             Layout.fillWidth: true
                             text: root.zh
-                                  ? "独立网络里 Steam 覆盖层可能失效：需要系统 C 编译器（gcc）来生成一个辅助库。"
-                                  : "The Steam overlay may not work inside the isolated network: it needs a C compiler (gcc) to build a small helper library."
+                                  ? "独立网络里 Steam 覆盖层可能失效：辅助库没准备好（构建时缺 C 编译器，装上 gcc 后重新编译本程序即可）。"
+                                  : "The Steam overlay may not work inside the isolated network: the helper library is missing (built without a C compiler; install gcc and rebuild)."
                             color: c.dim
                             font.pixelSize: 12
                             wrapMode: Text.WordWrap

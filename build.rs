@@ -27,6 +27,29 @@ fn main() {
     }
     println!("cargo:rustc-env=WINRUN_QML_STAMP={:x}", hasher.finish());
 
+    // 覆盖层 uid 辅助库：构建期编译成 .so 嵌进二进制，用户机器上就不再需要 C
+    // 编译器。构建机上没有 cc 时写入空占位，运行时检测到不是有效 ELF 会回退
+    // 到现场编译（老行为）。
+    println!("cargo:rerun-if-changed=assets/overlay-uid/overlay-uid.c");
+    let out_dir = std::env::var("OUT_DIR").unwrap_or_default();
+    if !out_dir.is_empty() {
+        for (bits, flag) in [("64", "-m64"), ("32", "-m32")] {
+            let out = format!("{out_dir}/overlay-uid-{bits}.so");
+            let ok = std::process::Command::new("cc")
+                .args([
+                    flag, "-shared", "-fPIC", "-O2", "-fno-stack-protector",
+                    "-U_FORTIFY_SOURCE", "-x", "c",
+                    "assets/overlay-uid/overlay-uid.c", "-o", &out,
+                ])
+                .status()
+                .map(|status| status.success())
+                .unwrap_or(false);
+            if !ok {
+                let _ = std::fs::write(&out, b"");
+            }
+        }
+    }
+
     let qml = QmlModule::new("WinRun").qml_file("qml/Main.qml");
 
     CxxQtBuilder::new_qml_module(qml)

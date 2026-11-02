@@ -25,8 +25,8 @@
 
 - Rust（构建用）、Qt 6：`qt6-base` `qt6-declarative` `qt6-svg`
 - 运行时：`passt`（独立网络）、`util-linux`（nsenter / unshare）、`curl` + `tar`（下载运行器/运行时）
-- 可选：`gcc`（Steam 覆盖层辅助库）、`wine`（系统 Wine 运行器）、`icoextract`（图标提取）
-- 运行器：任意一份 Proton 或 Wine，详见下面「运行器」一节
+- 可选：`wine`（系统 Wine 运行器）、`icoextract`（图标提取）；构建机需要 `cc`（覆盖层辅助库在构建期编译嵌入）
+- 运行器：GE-Proton（界面里一键下载，默认）或任意一份 Proton / Wine，详见下面「运行器」一节
 
 ## 安装
 
@@ -151,9 +151,10 @@ winrun-manager --exec %command%
 回环，keeper 会把连接转给宿主上的 Steam 客户端。
 
 Steam 覆盖层（FPS、成就）要靠 `getuid()` 找宿主客户端。命名空间里 Wine 是 root、
-宿主客户端是普通用户，两边对不上，覆盖层会悄悄失效。WinRun 会在需要时用系统 C
-编译器（`gcc`）生成一个很小的辅助库预加载进游戏，只让覆盖层看到真实 uid。
-没装编译器也不影响游戏运行，只是没有覆盖层。
+宿主客户端是普通用户，两边对不上，覆盖层会悄悄失效。WinRun 把一个很小的辅助库
+在**构建期编译好嵌进二进制**（`assets/overlay-uid/`），预加载进游戏后只让覆盖层
+看到真实 uid——用户机器上不需要装 C 编译器。只有在特殊架构上构建时才会回退到
+现场用 `cc` 编译。
 
 ## 构建
 

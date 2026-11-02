@@ -1,6 +1,7 @@
 //! GE / DW 运行器的版本检查与安装（原 lib/runners.sh 的 check_update / update）
 //!
-//! WE-Proton 是本地维护版，没有在线安装/更新，只在界面里说明。
+//! 默认运行器是 GE-Proton：开箱即用只需要在界面里点一次「下载」。
+//! WE-Proton 是本地维护版，没有在线安装/更新，装了也能用。
 
 use crate::core::paths::cache_home;
 use crate::engine::runners::{local_runner_dir, product_dir_name, steam_runner_dir};

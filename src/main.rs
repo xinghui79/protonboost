@@ -86,7 +86,11 @@ fn doctor() {
     let netns = core::prefix::netns_enabled(&prefix);
     println!("  当前前缀               {}", if netns { "已开启" } else { "未开启" });
     println!("  真实 uid（命名空间外） {}", engine::session::outside_uid());
-    println!("  覆盖层辅助库           {}", if engine::overlay::is_ready() { "已编译" } else { "未编译（首次用到时现编）" });
+    println!(
+        "  覆盖层辅助库           {}{}",
+        if engine::overlay::is_ready() { "内嵌" } else { "缺失（构建时缺 cc，装上后重新编译）" },
+        if engine::overlay::has_compiler() { "" } else { "（本机也没有 cc，无法回退编译）" }
+    );
 
     println!();
     println!("Steam 端口转发:");

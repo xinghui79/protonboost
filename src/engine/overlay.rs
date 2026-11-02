@@ -6,103 +6,82 @@
 //! 而宿主上的 Steam 客户端用的是 `/dev/shm/u1000-…`——两边永远碰不上，
 //! 覆盖层（FPS、成就、好友）就废了。
 //!
-//! 这里编译一个极小的共享库预加载进游戏：它用 `dl_iterate_phdr` 找到
+//! 这里准备一个极小的共享库预加载进游戏：它用 `dl_iterate_phdr` 找到
 //! 覆盖层自己的代码范围，**只有覆盖层问到 getuid() 时**才回答用户的真实 uid，
 //! 其他调用者（Wine、加速器的 TUN 适配器）照旧看到 root。
 //!
-//! 需要系统装了 C 编译器（`cc`）。没有就跳过——游戏照常跑，只是没有覆盖层。
+//! 编译好的 `.so` 在构建期就嵌进二进制（见 build.rs），用户机器上不需要
+//! C 编译器。只有嵌入产物缺架构（比如在别的架构上构建）时才回退到
+//! 现场 `cc` 编译。
 
 use crate::core::paths::cache_home;
 use sha2::{Digest, Sha256};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// 辅助库的 C 源码。改动会让缓存键变化，重新编译。
-const SOURCE: &str = r#"
-/* Preloaded into a Steam game run in a session's network namespace, where the
- * user is root: Steam's overlay names what it shares with the Steam client
- * after getuid(), so it answers the overlay with the user the client runs as.
- * Every other caller, Wine among them, gets the real uid. */
-#define _GNU_SOURCE
-#include <link.h>
-#include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/syscall.h>
-#include <unistd.h>
+/// 辅助库的 C 源码，单一来源是 assets/overlay-uid/overlay-uid.c。
+/// 改动会让缓存键变化，重新铺缓存。
+const SOURCE: &str = include_str!("../../assets/overlay-uid/overlay-uid.c");
 
-static uintptr_t overlay_start, overlay_end;
+/// 构建期编译好的辅助库（见 build.rs）。没有编译器时是空占位。
+const EMBEDDED_64: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/overlay-uid-64.so"));
+const EMBEDDED_32: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/overlay-uid-32.so"));
 
-static int find_overlay(struct dl_phdr_info *info, size_t size, void *data)
-{
-    const char *name = info->dlpi_name;
-    uintptr_t start = UINTPTR_MAX, end = 0;
-    int i;
-
-    (void)size;
-    (void)data;
-    if (!name || !strstr(name, "/gameoverlayrenderer.so"))
-        return 0;
-    for (i = 0; i < info->dlpi_phnum; i++) {
-        const ElfW(Phdr) *phdr = &info->dlpi_phdr[i];
-        if (phdr->p_type != PT_LOAD)
-            continue;
-        if (info->dlpi_addr + phdr->p_vaddr < start)
-            start = info->dlpi_addr + phdr->p_vaddr;
-        if (info->dlpi_addr + phdr->p_vaddr + phdr->p_memsz > end)
-            end = info->dlpi_addr + phdr->p_vaddr + phdr->p_memsz;
+/// 嵌入产物是否可用：是 ELF，且架构匹配当前主机（64 位匹配主机架构，
+/// 32 位匹配主机架构的 32 位变体）。
+fn embedded(bits: u32) -> Option<&'static [u8]> {
+    let bytes = if bits == 64 { EMBEDDED_64 } else { EMBEDDED_32 };
+    if bytes.len() < 20 || !bytes.starts_with(b"\x7fELF") {
+        return None;
     }
-    if (end) {
-        overlay_start = start;
-        overlay_end = end;
-    }
-    return 1;
+    // e_machine 在 ELF 头偏移 18 处，小端 u16
+    let machine = u16::from_le_bytes([bytes[18], bytes[19]]);
+    let ok = match (std::env::consts::ARCH, bits) {
+        ("x86_64", 64) => machine == 62,  // EM_X86_64
+        ("x86_64", 32) => machine == 3,   // EM_386
+        ("aarch64", 64) => machine == 183, // EM_AARCH64
+        ("aarch64", 32) => machine == 40, // EM_ARM
+        _ => false,
+    };
+    ok.then_some(bytes)
 }
-
-static long overlay_uid(void)
-{
-    const char *value = getenv("WINRUN_OVERLAY_UID");
-    long uid = 0;
-
-    if (!value || !*value)
-        return -1;
-    for (; *value; value++) {
-        if (*value < '0' || *value > '9')
-            return -1;
-        uid = uid * 10 + (*value - '0');
-    }
-    return uid;
-}
-
-uid_t getuid(void)
-{
-    uintptr_t caller = (uintptr_t)__builtin_return_address(0);
-    long uid;
-
-    if (!overlay_end)
-        dl_iterate_phdr(find_overlay, NULL);
-    if (caller >= overlay_start && caller < overlay_end && (uid = overlay_uid()) >= 0)
-        return (uid_t)uid;
-    return (uid_t)syscall(SYS_getuid);
-}
-"#;
 
 fn cache_dir() -> PathBuf {
     cache_home().join("winrun/overlay-uid")
 }
 
-/// 源码指纹：改了源码就重新编译
+/// 源码指纹：改了源码就重新铺缓存
 fn source_key() -> String {
     let mut hasher = Sha256::new();
     hasher.update(SOURCE.as_bytes());
     format!("{:x}", hasher.finalize())[..16].to_string()
 }
 
-/// 编译出 64 位的辅助库。系统没有 C 编译器时返回 None。
+fn cached(bits: u32) -> PathBuf {
+    cache_dir().join(source_key()).join(format!("overlay-uid-{bits}.so"))
+}
+
+/// 把嵌入的产物铺到缓存目录
+fn install_embedded(bits: u32, out: &Path) -> bool {
+    let Some(bytes) = embedded(bits) else {
+        return false;
+    };
+    if std::fs::write(out, bytes).is_err() {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(out, std::fs::Permissions::from_mode(0o755));
+    }
+    true
+}
+
+/// 准备好 64/32 位的辅助库，返回路径。嵌入产物优先，没有才现场编译。
 fn build(bits: u32) -> Option<PathBuf> {
     let dir = cache_dir().join(source_key());
     let _ = std::fs::create_dir_all(&dir);
-    let out = dir.join(format!("overlay-uid-{bits}.so"));
+    let out = cached(bits);
     if out.is_file() {
         return Some(out);
     }
@@ -111,7 +90,14 @@ fn build(bits: u32) -> Option<PathBuf> {
         return None;
     }
 
+    // 嵌入的优先：用户机器上不需要编译器
     let tmp = dir.join(format!("overlay-uid-{bits}.so.tmp"));
+    if install_embedded(bits, &tmp) {
+        std::fs::rename(&tmp, &out).ok()?;
+        return Some(out);
+    }
+
+    // 回退：现场编译（嵌入产物缺架构时才会走到这）
     let mut command = Command::new("cc");
     command
         .arg(format!("-m{bits}"))
@@ -144,7 +130,7 @@ fn build(bits: u32) -> Option<PathBuf> {
     Some(out)
 }
 
-/// 系统有 C 编译器吗
+/// 系统有 C 编译器吗（嵌入产物缺失时的回退手段）
 pub fn has_compiler() -> bool {
     crate::core::paths::which("cc").is_some()
 }
@@ -168,9 +154,6 @@ pub fn prepare_env(
     if !preload.contains("gameoverlayrenderer.so") {
         return out;
     }
-    if !has_compiler() {
-        return out;
-    }
     let mut libs = Vec::new();
     for bits in [64u32, 32u32] {
         if let Some(lib) = build(bits) {
@@ -186,10 +169,12 @@ pub fn prepare_env(
     out
 }
 
-/// 辅助库是否已经编译好了（界面里可以提示用户）
+/// 辅助库是否可用（嵌入产物有效或缓存里已铺好；界面里可以提示用户）
 pub fn is_ready() -> bool {
-    let dir = cache_dir().join(source_key());
-    dir.join("overlay-uid-64.so").is_file()
+    if embedded(64).is_some() {
+        return true;
+    }
+    cached(64).is_file()
 }
 
 /// 供测试：确认源码里有 getuid 覆盖
@@ -202,4 +187,10 @@ pub fn source_contains_getuid() -> bool {
 #[cfg(test)]
 pub fn source_length() -> usize {
     SOURCE.len()
+}
+
+/// 供测试：嵌入产物在当前主机上可用
+#[cfg(test)]
+pub fn embedded_ready() -> bool {
+    embedded(64).is_some()
 }

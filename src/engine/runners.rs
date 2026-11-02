@@ -17,7 +17,7 @@ pub struct Runner {
     pub path: String,
 }
 
-pub const DEFAULT_PRODUCT: &str = "we";
+pub const DEFAULT_PRODUCT: &str = "ge";
 
 pub fn steam_runner_dir() -> PathBuf {
     home().join(".local/share/Steam/compatibilitytools.d")
@@ -206,7 +206,7 @@ pub fn discover() -> Vec<Runner> {
     let steam_dir = home().join(".local/share/Steam");
     let steam_root = home().join(".steam/root");
     let local_dir = local_runner_dir();
-    let default_dir = product_dir_name(DEFAULT_PRODUCT).unwrap_or("WE-Proton Latest");
+    let default_dir = product_dir_name(DEFAULT_PRODUCT).unwrap_or("Proton-GE Latest");
 
     for variable in ["WINRUN_RUNNER", "PROTON_GE_PATH"] {
         if let Ok(value) = std::env::var(variable) {
@@ -224,7 +224,7 @@ pub fn discover() -> Vec<Runner> {
     }
 
     for base in [steam_dir.join("compatibilitytools.d"), steam_root.join("compatibilitytools.d")] {
-        for product in ["DW-Proton Latest", "Proton-GE Latest"] {
+        for product in ["Proton-GE Latest", "DW-Proton Latest"] {
             collector.add("proton", "steam", &base.join(product).join("proton"));
         }
         collector.add_glob("proton", "steam", &base, "proton");
